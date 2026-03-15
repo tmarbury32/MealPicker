@@ -239,11 +239,11 @@
 
   <!-- Tab bar -->
   <div class="tab-bar">
-    <button class="tab active" onclick="switchTab('pick')" id="tab-pick">
+    <button class="tab" onclick="switchTab('pick')" id="tab-pick">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8" fill="currentColor" stroke="none"/></svg>
       Pick
     </button>
-    <button class="tab" onclick="switchTab('meals')" id="tab-meals">
+    <button class="tab active" onclick="switchTab('meals')" id="tab-meals">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
       Meals
     </button>
@@ -266,7 +266,7 @@
     <div id="import-banner" style="display:none"></div>
 
     <!-- PICK TAB -->
-    <div class="tab-page active" id="page-pick">
+    <div class="tab-page" id="page-pick">
       <div>
         <div class="section-label">Filter by category</div>
         <div class="filter-row" id="filter-row"></div>
@@ -301,7 +301,7 @@
     </div>
 
     <!-- MEALS TAB -->
-    <div class="tab-page" id="page-meals">
+    <div class="tab-page active" id="page-meals">
       <div class="add-row">
         <input id="item-input" type="text" placeholder="Add a meal…" maxlength="80" autocomplete="off"/>
         <button class="add-btn" onclick="addItem()">
