@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Random Picker" />
+  <meta name="theme-color" content="#F2F2F7" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
+  <title>Random Picker</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+    :root {
+      --bg: #F2F2F7;
+      --card: #FFFFFF;
+      --card2: #F2F2F7;
+      --label: #8E8E93;
+      --sep: rgba(60,60,67,0.18);
+      --text: #1C1C1E;
+      --text2: #3C3C43;
+      --blue: #007AFF;
+      --orange: #FF9500;
+      --red: #FF3B30;
+      --green: #34C759;
+      --safe-top: env(safe-area-inset-top, 44px);
+      --safe-bottom: env(safe-area-inset-bottom, 20px);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #000;
+        --card: #1C1C1E;
+        --card2: #2C2C2E;
+        --label: #636366;
+        --sep: rgba(255,255,255,0.12);
+        --text: #FFF;
+        --text2: #EBEBF5;
+        --blue: #0A84FF;
+        --orange: #FF9F0A;
+        --red: #FF453A;
+        --green: #30D158;
+      }
+    }
+
+    html, body { height: 100%; background: var(--bg); font-family: -apple-system, BlinkMacSystemFont, sans-serif; color: var(--text); overflow: hidden; }
+
+    /* ── Layout ── */
+    .app { display: flex; flex-direction: column; height: 100%; padding-top: var(--safe-top); }
+    .nav { padding: 8px 20px 0; background: var(--bg); }
+    .nav h1 { font-size: 34px; font-weight: 700; letter-spacing: -0.5px; padding-bottom: 8px; }
+    .scroll { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 12px 16px calc(var(--safe-bottom) + 16px); display: flex; flex-direction: column; gap: 16px; }
+
+    /* ── Cards ── */
+    .card { background: var(--card); border-radius: 14px; overflow: hidden; }
+    .section-label { font-size: 13px; color: var(--label); text-transform: uppercase; letter-spacing: 0.5px; padding: 0 4px 6px; }
+
+    /* ── Add row ── */
+    .add-row { display: flex; align-items: center; gap: 10px; background: var(--card); border-radius: 14px; padding: 4px 4px 4px 16px; }
+    .add-row input { flex: 1; border: none; outline: none; font-size: 17px; color: var(--text); background: transparent; padding: 12px 0; font-family: inherit; }
+    .add-row input::placeholder { color: var(--label); }
+    .add-btn { background: var(--blue); border: none; border-radius: 10px; width: 38px; height: 38px; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; }
+    .add-btn:active { opacity: 0.75; transform: scale(0.92); }
+
+    /* ── List items ── */
+    .list-item { display: flex; align-items: center; padding: 14px 16px; border-bottom: 0.5px solid var(--sep); gap: 12px; background: var(--card); }
+    .list-item:last-child { border-bottom: none; }
+    .item-info { flex: 1; min-width: 0; }
+    .item-name { font-size: 17px; color: var(--text); }
+    .item-sub { font-size: 13px; color: var(--label); margin-top: 1px; }
+    .icon-btn { background: none; border: none; cursor: pointer; padding: 4px; display: flex; align-items: center; justify-content: center; }
+    .icon-btn:active { opacity: 0.5; }
+    .del-btn { opacity: 0.5; }
+    .del-btn:active { opacity: 1; }
+    .empty { padding: 28px 16px; text-align: center; color: var(--label); font-size: 15px; }
+
+    /* ── Result card ── */
+    .result-card { background: var(--card); border-radius: 20px; padding: 24px 20px; text-align: center; display: none; flex-direction: column; align-items: center; gap: 8px; }
+    .result-card.show { display: flex; animation: pop 0.38s cubic-bezier(0.34,1.56,0.64,1) both; }
+    .result-emoji { font-size: 44px; line-height: 1; margin-bottom: 4px; }
+    .result-lbl { font-size: 12px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.7px; color: var(--label); }
+    .result-val { font-size: 26px; font-weight: 700; color: var(--blue); letter-spacing: -0.4px; word-break: break-word; }
+    .action-btn { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; padding: 11px; border-radius: 10px; border: none; font-size: 15px; font-weight: 500; cursor: pointer; font-family: inherit; margin-top: 4px; }
+    .action-btn:active { opacity: 0.75; transform: scale(0.97); }
+    .btn-blue { background: rgba(0,122,255,0.12); color: var(--blue); }
+    .btn-orange { background: rgba(255,149,0,0.12); color: var(--orange); }
+
+    /* ── Pick button ── */
+    .pick-btn { background: var(--blue); border: none; border-radius: 14px; padding: 18px; font-size: 17px; font-weight: 600; color: white; cursor: pointer; width: 100%; font-family: inherit; }
+    .pick-btn:active { transform: scale(0.97); opacity: 0.88; }
+    .pick-btn:disabled { background: var(--label); opacity: 0.4; transform: none; }
+
+    @keyframes pop { 0% { transform: scale(0.75); opacity: 0; } 65% { transform: scale(1.06); } 100% { transform: scale(1); opacity: 1; } }
+
+    /* ── Sheets (modals) ── */
+    .sheet-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 100; display: none; align-items: flex-end; }
+    .sheet-backdrop.open { display: flex; animation: fadeIn 0.2s ease both; }
+    .sheet { background: var(--bg); border-radius: 20px 20px 0 0; width: 100%; max-height: 92vh; display: flex; flex-direction: column; animation: slideUp 0.32s cubic-bezier(0.32,0.72,0,1) both; padding-bottom: var(--safe-bottom); }
+    .sheet-handle { width: 36px; height: 4px; background: var(--sep); border-radius: 2px; margin: 10px auto 0; flex-shrink: 0; }
+    .sheet-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px 10px; flex-shrink: 0; }
+    .sheet-title { font-size: 18px; font-weight: 600; }
+    .sheet-btn { background: none; border: none; font-size: 17px; cursor: pointer; font-family: inherit; color: var(--blue); padding: 4px 0; }
+    .sheet-btn.bold { font-weight: 600; }
+    .sheet-btn.red { color: var(--red); }
+    .sheet-scroll { overflow-y: auto; -webkit-overflow-scrolling: touch; flex: 1; padding: 0 16px 16px; display: flex; flex-direction: column; gap: 20px; }
+
+    /* ── Form elements ── */
+    .form-section { display: flex; flex-direction: column; gap: 2px; }
+    .form-label { font-size: 13px; color: var(--label); text-transform: uppercase; letter-spacing: 0.5px; padding: 0 4px 6px; }
+    .form-card { background: var(--card); border-radius: 14px; overflow: hidden; }
+    .form-row { display: flex; align-items: center; padding: 12px 16px; border-bottom: 0.5px solid var(--sep); gap: 10px; }
+    .form-row:last-child { border-bottom: none; }
+    .form-row label { font-size: 15px; color: var(--text2); white-space: nowrap; }
+    .form-row input, .form-row textarea { flex: 1; border: none; outline: none; font-size: 15px; color: var(--text); background: transparent; font-family: inherit; text-align: right; }
+    .form-row textarea { text-align: left; resize: none; line-height: 1.5; min-height: 60px; padding: 4px 0; }
+    .form-row input::placeholder, .form-row textarea::placeholder { color: var(--label); }
+    .ingredient-row, .step-row { display: flex; align-items: flex-start; padding: 10px 16px; border-bottom: 0.5px solid var(--sep); gap: 10px; }
+    .ingredient-row:last-of-type, .step-row:last-of-type { border-bottom: none; }
+    .step-num { font-size: 13px; font-weight: 600; color: white; background: var(--blue); border-radius: 50%; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 6px; }
+    .ingredient-row input, .step-row textarea { flex: 1; border: none; outline: none; font-size: 15px; color: var(--text); background: transparent; font-family: inherit; line-height: 1.5; padding: 4px 0; resize: none; min-height: 34px; }
+    .ingredient-row input::placeholder, .step-row textarea::placeholder { color: var(--label); }
+    .minus-btn { background: var(--red); border: none; border-radius: 50%; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; margin-top: 6px; }
+    .minus-btn:active { opacity: 0.7; }
+    .add-row-btn { display: flex; align-items: center; gap: 8px; padding: 12px 16px; font-size: 15px; color: var(--blue); background: none; border: none; cursor: pointer; font-family: inherit; width: 100%; }
+    .add-row-btn:active { opacity: 0.6; }
+
+    /* ── Photo section ── */
+    .photo-preview { width: 100%; height: 180px; object-fit: cover; border-radius: 12px; display: block; }
+    .photo-actions { display: flex; gap: 10px; }
+    .photo-btn { flex: 1; padding: 11px; background: var(--card2); border: none; border-radius: 10px; font-size: 14px; font-weight: 500; color: var(--blue); cursor: pointer; font-family: inherit; }
+    .photo-btn:active { opacity: 0.7; }
+    .remove-photo-btn { width: 100%; padding: 11px; background: none; border: none; color: var(--red); font-size: 15px; cursor: pointer; font-family: inherit; }
+
+    /* ── Recipe view ── */
+    .recipe-photo { width: 100%; height: 220px; object-fit: cover; border-radius: 14px; display: block; }
+    .stats-row { display: flex; background: var(--card); border-radius: 12px; overflow: hidden; }
+    .stat-cell { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 12px 8px; gap: 3px; border-right: 0.5px solid var(--sep); }
+    .stat-cell:last-child { border-right: none; }
+    .stat-label { font-size: 12px; color: var(--label); }
+    .stat-value { font-size: 15px; font-weight: 600; }
+    .section-heading { font-size: 19px; font-weight: 700; padding: 0 4px; }
+    .ing-item { display: flex; align-items: flex-start; gap: 10px; padding: 7px 0; border-bottom: 0.5px solid var(--sep); }
+    .ing-item:last-child { border-bottom: none; }
+    .ing-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--blue); flex-shrink: 0; margin-top: 7px; }
+    .ing-text { font-size: 16px; }
+    .step-item { display: flex; align-items: flex-start; gap: 12px; padding: 8px 0; border-bottom: 0.5px solid var(--sep); }
+    .step-item:last-child { border-bottom: none; }
+    .step-bubble { font-size: 13px; font-weight: 600; color: white; background: var(--blue); border-radius: 50%; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 2px; }
+    .step-text { font-size: 16px; line-height: 1.5; }
+
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+
+    /* hidden file input */
+    #photo-input, #camera-input { display: none; }
+  </style>
+</head>
+<body>
+
+<div class="app">
+  <div class="nav"><h1>Random Picker</h1></div>
+  <div class="scroll" id="scroll">
+
+    <div class="add-row">
+      <input id="item-input" type="text" placeholder="Add a meal or item…" maxlength="80" autocomplete="off" />
+      <button class="add-btn" onclick="addItem()">
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M9 3v12M3 9h12" stroke="white" stroke-width="2.2" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+
+    <div>
+      <div class="section-label" id="section-label">Items — 0</div>
+      <div class="card" id="items-list"><div class="empty">Add meals or items above to get started</div></div>
+    </div>
+
+    <div class="result-card" id="result-card">
+      <div class="result-emoji" id="result-emoji">🎯</div>
+      <div class="result-lbl">Tonight's pick</div>
+      <div class="result-val" id="result-val">—</div>
+      <button class="action-btn btn-blue" id="view-recipe-btn" onclick="openViewSheet()" style="display:none">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l19-9-9 19-2-8-8-2z"/></svg>
+        View Recipe
+      </button>
+      <button class="action-btn btn-orange" id="add-recipe-btn" onclick="openEditSheetForPicked()" style="display:none">
+        <svg width="16" height="16" viewBox="0 0 18 18" fill="none"><path d="M9 3v12M3 9h12" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+        Add Recipe
+      </button>
+    </div>
+
+    <button class="pick-btn" id="pick-btn" onclick="pickRandom()" disabled>Pick Random Item</button>
+
+  </div>
+</div>
+
+<!-- View Recipe Sheet -->
+<div class="sheet-backdrop" id="view-sheet" onclick="closeViewSheet(event)">
+  <div class="sheet">
+    <div class="sheet-handle"></div>
+    <div class="sheet-header">
+      <button class="sheet-btn" onclick="closeViewSheetDirect()">Done</button>
+      <div class="sheet-title" id="view-sheet-title"></div>
+      <button class="sheet-btn bold" onclick="switchToEdit()">Edit</button>
+    </div>
+    <div class="sheet-scroll" id="view-sheet-body"></div>
+  </div>
+</div>
+
+<!-- Edit Recipe Sheet -->
+<div class="sheet-backdrop" id="edit-sheet" onclick="closeEditSheet(event)">
+  <div class="sheet">
+    <div class="sheet-handle"></div>
+    <div class="sheet-header">
+      <button class="sheet-btn" onclick="closeEditSheetDirect()">Cancel</button>
+      <div class="sheet-title" id="edit-sheet-title"></div>
+      <button class="sheet-btn bold" onclick="saveRecipe()">Save</button>
+    </div>
+    <div class="sheet-scroll" id="edit-sheet-body"></div>
+  </div>
+</div>
+
+<input type="file" id="photo-input" accept="image/*" onchange="handlePhotoInput(event)" />
+<input type="file" id="camera-input" accept="image/*" capture="environment" onchange="handlePhotoInput(event)" />
+
+<script>
+  // ── State ──
+  const emojis = ['🎯','🎲','✨','🔮','🌟','🎁','🏆','💫','🍀','🎰'];
+  let emojiIdx = 0;
+  let items = [];       // [{id, name, recipe: null | {ingredients[], steps[], prepTime, cookTime, servings, photoDataUrl}}]
+  let pickedId = null;
+  let editingId = null; // which item we're editing recipe for
+
+  // Temp edit state
+  let editIngredients = [];
+  let editSteps = [];
+
+  // ── Load ──
+  function load() {
+    try { items = JSON.parse(localStorage.getItem('rp-items') || '[]'); } catch(e) { items = []; }
+    render();
+  }
+
+  function save() {
+    localStorage.setItem('rp-items', JSON.stringify(items));
+  }
+
+  function uid() { return Math.random().toString(36).slice(2); }
+
+  // ── Render list ──
+  function render() {
+    const lbl = document.getElementById('section-label');
+    const list = document.getElementById('items-list');
+    const btn = document.getElementById('pick-btn');
+    lbl.textContent = `Items — ${items.length}`;
+    btn.disabled = items.length === 0;
+    if (items.length === 0) {
+      list.innerHTML = '<div class="empty">Add meals or items above to get started</div>';
+      return;
+    }
+    list.innerHTML = items.map(item => `
+      <div class="list-item">
+        <div class="item-info">
+          <div class="item-name">${esc(item.name)}</div>
+          ${item.recipe ? '<div class="item-sub">Recipe attached</div>' : ''}
+        </div>
+        ${item.recipe
+          ? `<button class="icon-btn" onclick="openViewSheetFor('${item.id}')" title="View recipe">
+               <svg width="26" height="26" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="11" fill="var(--blue)"/><path d="M7 8h10M7 12h7M7 16h5" stroke="white" stroke-width="1.6" stroke-linecap="round"/></svg>
+             </button>`
+          : `<button class="icon-btn" onclick="openEditSheetFor('${item.id}')" title="Add recipe">
+               <svg width="26" height="26" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="11" stroke="var(--label)" stroke-width="1.5" fill="none"/><path d="M12 7v10M7 12h10" stroke="var(--label)" stroke-width="1.6" stroke-linecap="round"/></svg>
+             </button>`
+        }
+        <button class="icon-btn del-btn" onclick="removeItem('${item.id}')">
+          <svg width="22" height="22" viewBox="0 0 22 22" fill="none"><circle cx="11" cy="11" r="10" fill="var(--label)" opacity="0.4"/><path d="M7.5 7.5l7 7M14.5 7.5l-7 7" stroke="white" stroke-width="1.6" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+    `).join('');
+  }
+
+  // ── Add / Remove ──
+  function addItem() {
+    const inp = document.getElementById('item-input');
+    const val = inp.value.trim();
+    if (!val) return;
+    items.push({ id: uid(), name: val, recipe: null });
+    inp.value = '';
+    save(); render();
+  }
+  document.getElementById('item-input').addEventListener('keydown', e => { if (e.key === 'Enter') addItem(); });
+
+  function removeItem(id) {
+    items = items.filter(i => i.id !== id);
+    if (pickedId === id) { pickedId = null; document.getElementById('result-card').classList.remove('show'); }
+    save(); render();
+  }
+
+  // ── Pick ──
+  function pickRandom() {
+    if (!items.length) return;
+    const item = items[Math.floor(Math.random() * items.length)];
+    pickedId = item.id;
+    document.getElementById('result-val').textContent = item.name;
+    document.getElementById('result-emoji').textContent = emojis[emojiIdx++ % emojis.length];
+    document.getElementById('view-recipe-btn').style.display = item.recipe ? 'flex' : 'none';
+    document.getElementById('add-recipe-btn').style.display = item.recipe ? 'none' : 'flex';
+    const rc = document.getElementById('result-card');
+    rc.classList.remove('show');
+    void rc.offsetWidth;
+    rc.classList.add('show');
+    setTimeout(() => rc.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 60);
+  }
+
+  // ── View Sheet ──
+  function openViewSheetFor(id) { pickedId = id; openViewSheet(); }
+
+  function openViewSheet() {
+    const item = items.find(i => i.id === pickedId);
+    if (!item || !item.recipe) return;
+    const r = item.recipe;
+    document.getElementById('view-sheet-title').textContent = item.name;
+
+    let html = '';
+
+    if (r.photoDataUrl) {
+      html += `<img class="recipe-photo" src="${r.photoDataUrl}" alt="Recipe photo" />`;
+    }
+
+    const stats = [
+      r.prepTime ? { l: 'Prep', v: r.prepTime } : null,
+      r.cookTime ? { l: 'Cook', v: r.cookTime } : null,
+      r.servings  ? { l: 'Serves', v: r.servings } : null,
+    ].filter(Boolean);
+    if (stats.length) {
+      html += `<div class="stats-row">${stats.map(s => `<div class="stat-cell"><div class="stat-label">${s.l}</div><div class="stat-value">${esc(s.v)}</div></div>`).join('')}</div>`;
+    }
+
+    const ings = r.ingredients.filter(Boolean);
+    if (ings.length) {
+      html += `<div><div class="section-heading" style="margin-bottom:10px">Ingredients</div><div class="card">${ings.map(i => `<div class="ing-item"><div class="ing-dot"></div><div class="ing-text">${esc(i)}</div></div>`).join('')}</div></div>`;
+    }
+
+    const steps = r.steps.filter(Boolean);
+    if (steps.length) {
+      html += `<div><div class="section-heading" style="margin-bottom:10px">Instructions</div><div class="card">${steps.map((s,i) => `<div class="step-item"><div class="step-bubble">${i+1}</div><div class="step-text">${esc(s)}</div></div>`).join('')}</div></div>`;
+    }
+
+    document.getElementById('view-sheet-body').innerHTML = html;
+    document.getElementById('view-sheet').classList.add('open');
+  }
+
+  function closeViewSheet(e) { if (e.target === e.currentTarget) closeViewSheetDirect(); }
+  function closeViewSheetDirect() { document.getElementById('view-sheet').classList.remove('open'); }
+
+  function switchToEdit() {
+    closeViewSheetDirect();
+    setTimeout(() => openEditSheetFor(pickedId), 300);
+  }
+
+  // ── Edit Sheet ──
+  function openEditSheetFor(id) { editingId = id; openEditSheet(); }
+  function openEditSheetForPicked() { editingId = pickedId; openEditSheet(); }
+
+  function openEditSheet() {
+    const item = items.find(i => i.id === editingId);
+    if (!item) return;
+    const r = item.recipe || {};
+    editIngredients = r.ingredients?.length ? [...r.ingredients] : [''];
+    editSteps = r.steps?.length ? [...r.steps] : [''];
+
+    document.getElementById('edit-sheet-title').textContent = item.name;
+    renderEditSheet(r);
+    document.getElementById('edit-sheet').classList.add('open');
+  }
+
+  function renderEditSheet(r) {
+    r = r || {};
+    const body = document.getElementById('edit-sheet-body');
+    body.innerHTML = `
+      <!-- Photo -->
+      <div class="form-section">
+        <div class="form-label">Photo</div>
+        <div class="form-card" style="padding:14px;display:flex;flex-direction:column;gap:12px;" id="photo-section">
+          ${r.photoDataUrl ? `<img class="recipe-photo" id="photo-preview" src="${r.photoDataUrl}" />` : '<div id="photo-preview"></div>'}
+          <div class="photo-actions">
+            <button class="photo-btn" onclick="document.getElementById('photo-input').click()">📷 Photo Library</button>
+            <button class="photo-btn" onclick="document.getElementById('camera-input').click()">📸 Camera</button>
+          </div>
+          ${r.photoDataUrl ? `<button class="remove-photo-btn" onclick="removePhoto()">Remove Photo</button>` : ''}
+        </div>
+      </div>
+
+      <!-- Timings -->
+      <div class="form-section">
+        <div class="form-label">Timings & Servings</div>
+        <div class="form-card">
+          <div class="form-row"><label>Prep time</label><input id="f-prep" type="text" placeholder="e.g. 15 mins" value="${esc(r.prepTime||'')}" /></div>
+          <div class="form-row"><label>Cook time</label><input id="f-cook" type="text" placeholder="e.g. 30 mins" value="${esc(r.cookTime||'')}" /></div>
+          <div class="form-row"><label>Servings</label><input id="f-servings" type="text" placeholder="e.g. 4" value="${esc(r.servings||'')}" /></div>
+        </div>
+      </div>
+
+      <!-- Ingredients -->
+      <div class="form-section">
+        <div class="form-label">Ingredients</div>
+        <div class="form-card" id="ingredients-card">
+          ${renderIngredients()}
+          <button class="add-row-btn" onclick="addIngredient()">
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="8.5" stroke="var(--blue)" stroke-width="1.2"/><path d="M9 5v8M5 9h8" stroke="var(--blue)" stroke-width="1.4" stroke-linecap="round"/></svg>
+            Add Ingredient
+          </button>
+        </div>
+      </div>
+
+      <!-- Steps -->
+      <div class="form-section">
+        <div class="form-label">Instructions</div>
+        <div class="form-card" id="steps-card">
+          ${renderSteps()}
+          <button class="add-row-btn" onclick="addStep()">
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="8.5" stroke="var(--blue)" stroke-width="1.2"/><path d="M9 5v8M5 9h8" stroke="var(--blue)" stroke-width="1.4" stroke-linecap="round"/></svg>
+            Add Step
+          </button>
+        </div>
+      </div>
+
+      ${item_has_recipe() ? `
+      <div class="form-section">
+        <div class="form-card">
+          <button class="add-row-btn" style="color:var(--red);justify-content:center" onclick="removeRecipe()">Remove Recipe</button>
+        </div>
+      </div>` : ''}
+
+      <div style="height:20px"></div>
+    `;
+  }
+
+  function item_has_recipe() {
+    const item = items.find(i => i.id === editingId);
+    return item && item.recipe;
+  }
+
+  function renderIngredients() {
+    return editIngredients.map((v, i) => `
+      <div class="ingredient-row" id="ing-row-${i}">
+        <input type="text" placeholder="Ingredient ${i+1}" value="${esc(v)}" oninput="editIngredients[${i}]=this.value" />
+        ${editIngredients.length > 1 ? `<button class="minus-btn" onclick="removeIngredient(${i})"><svg width="10" height="2" viewBox="0 0 10 2"><path d="M1 1h8" stroke="white" stroke-width="2" stroke-linecap="round"/></svg></button>` : ''}
+      </div>
+    `).join('');
+  }
+
+  function renderSteps() {
+    return editSteps.map((v, i) => `
+      <div class="step-row" id="step-row-${i}">
+        <div class="step-num">${i+1}</div>
+        <textarea placeholder="Step ${i+1}" oninput="editSteps[${i}]=this.value;autoGrow(this)">${esc(v)}</textarea>
+        ${editSteps.length > 1 ? `<button class="minus-btn" onclick="removeStep(${i})"><svg width="10" height="2" viewBox="0 0 10 2"><path d="M1 1h8" stroke="white" stroke-width="2" stroke-linecap="round"/></svg></button>` : ''}
+      </div>
+    `).join('');
+  }
+
+  function autoGrow(el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; }
+
+  function addIngredient() {
+    syncIngredientValues();
+    editIngredients.push('');
+    document.getElementById('ingredients-card').innerHTML = renderIngredients() + document.getElementById('ingredients-card').lastElementChild.outerHTML;
+    refreshIngredientCard();
+  }
+
+  function removeIngredient(i) {
+    syncIngredientValues();
+    editIngredients.splice(i, 1);
+    refreshIngredientCard();
+  }
+
+  function syncIngredientValues() {
+    document.querySelectorAll('[id^="ing-row-"] input').forEach((inp, i) => { editIngredients[i] = inp.value; });
+  }
+
+  function refreshIngredientCard() {
+    const card = document.getElementById('ingredients-card');
+    const addBtn = card.lastElementChild;
+    card.innerHTML = renderIngredients();
+    card.appendChild(addBtn);
+  }
+
+  function addStep() {
+    syncStepValues();
+    editSteps.push('');
+    refreshStepCard();
+  }
+
+  function removeStep(i) {
+    syncStepValues();
+    editSteps.splice(i, 1);
+    refreshStepCard();
+  }
+
+  function syncStepValues() {
+    document.querySelectorAll('[id^="step-row-"] textarea').forEach((ta, i) => { editSteps[i] = ta.value; });
+  }
+
+  function refreshStepCard() {
+    const card = document.getElementById('steps-card');
+    const addBtn = card.lastElementChild;
+    card.innerHTML = renderSteps();
+    card.appendChild(addBtn);
+  }
+
+  // ── Photo ──
+  let currentPhotoDataUrl = null;
+
+  function openEditSheet_withPhoto() {
+    const item = items.find(i => i.id === editingId);
+    currentPhotoDataUrl = item?.recipe?.photoDataUrl || null;
+  }
+
+  function handlePhotoInput(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      currentPhotoDataUrl = ev.target.result;
+      const preview = document.getElementById('photo-preview');
+      if (preview) { preview.src = currentPhotoDataUrl; preview.style.display = 'block'; }
+      // Re-render photo section with remove button
+      const section = document.getElementById('photo-section');
+      if (section) {
+        section.innerHTML = `
+          <img class="recipe-photo" id="photo-preview" src="${currentPhotoDataUrl}" />
+          <div class="photo-actions">
+            <button class="photo-btn" onclick="document.getElementById('photo-input').click()">📷 Photo Library</button>
+            <button class="photo-btn" onclick="document.getElementById('camera-input').click()">📸 Camera</button>
+          </div>
+          <button class="remove-photo-btn" onclick="removePhoto()">Remove Photo</button>
+        `;
+      }
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  }
+
+  function removePhoto() {
+    currentPhotoDataUrl = null;
+    const section = document.getElementById('photo-section');
+    if (section) {
+      section.innerHTML = `
+        <div id="photo-preview"></div>
+        <div class="photo-actions">
+          <button class="photo-btn" onclick="document.getElementById('photo-input').click()">📷 Photo Library</button>
+          <button class="photo-btn" onclick="document.getElementById('camera-input').click()">📸 Camera</button>
+        </div>
+      `;
+    }
+  }
+
+  // ── Save Recipe ──
+  function saveRecipe() {
+    syncIngredientValues();
+    syncStepValues();
+    const item = items.find(i => i.id === editingId);
+    if (!item) return;
+    item.recipe = {
+      ingredients: editIngredients.filter(s => s.trim()),
+      steps: editSteps.filter(s => s.trim()),
+      prepTime: document.getElementById('f-prep')?.value.trim() || '',
+      cookTime: document.getElementById('f-cook')?.value.trim() || '',
+      servings: document.getElementById('f-servings')?.value.trim() || '',
+      photoDataUrl: currentPhotoDataUrl,
+    };
+    // If recipe is completely empty, set to null
+    const r = item.recipe;
+    if (!r.ingredients.length && !r.steps.length && !r.prepTime && !r.cookTime && !r.servings && !r.photoDataUrl) {
+      item.recipe = null;
+    }
+    save();
+    render();
+    closeEditSheetDirect();
+    // Refresh result card buttons if this was the picked item
+    if (pickedId === editingId) {
+      document.getElementById('view-recipe-btn').style.display = item.recipe ? 'flex' : 'none';
+      document.getElementById('add-recipe-btn').style.display = item.recipe ? 'none' : 'flex';
+    }
+  }
+
+  function removeRecipe() {
+    const item = items.find(i => i.id === editingId);
+    if (item) { item.recipe = null; save(); render(); }
+    closeEditSheetDirect();
+    if (pickedId === editingId) {
+      document.getElementById('view-recipe-btn').style.display = 'none';
+      document.getElementById('add-recipe-btn').style.display = 'flex';
+    }
+  }
+
+  function closeEditSheet(e) { if (e.target === e.currentTarget) closeEditSheetDirect(); }
+  function closeEditSheetDirect() { document.getElementById('edit-sheet').classList.remove('open'); }
+
+  // ── Open edit sheet also inits photo state ──
+  const _origOpenEditSheet = openEditSheet;
+  openEditSheet = function() {
+    const item = items.find(i => i.id === editingId);
+    currentPhotoDataUrl = item?.recipe?.photoDataUrl || null;
+    _origOpenEditSheet();
+  };
+
+  // ── Helpers ──
+  function esc(s) {
+    return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  load();
+</script>
+</body>
+</html>
