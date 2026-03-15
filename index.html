@@ -1223,9 +1223,30 @@ async function syncGitHub(payload){
   const apiBase=`https://api.github.com/repos/${owner}/${repo}/contents/${FILENAME}`;
   const headers={Authorization:`Bearer ${token}`,'Content-Type':'application/json',Accept:'application/vnd.github+json'};
   let sha=null;
-  try{const r=await fetch(`${apiBase}?ref=${branch}`,{headers});if(r.ok){const ex=await r.json();sha=ex.sha;const remote=JSON.parse(atob(ex.content.replace(/\n/g,'')));if(remote.items)items=remote.items;if(remote.categories)categories=remote.categories;if(remote.allTags)allTags=remote.allTags;if(remote.pickHistory)pickHistory=remote.pickHistory;localStorage.setItem('rp-items',JSON.stringify(items));}}catch(e){}
-  const content=btoa(unescape(encodeURIComponent(JSON.stringify({items,categories,allTags,pickHistory}))));
-  const body={message:'Sync from Meal Picker',content,branch};if(sha)body.sha=sha;
+  let remoteIsEmpty=true;
+  // Try to read existing remote file
+  try{
+    const r=await fetch(`${apiBase}?ref=${branch}`,{headers});
+    if(r.ok){
+      const ex=await r.json();
+      sha=ex.sha;
+      const remote=JSON.parse(atob(ex.content.replace(/\n/g,'')));
+      // Only overwrite local if remote has actual data
+      if(remote.items&&remote.items.length>0){
+        remoteIsEmpty=false;
+        items=remote.items;
+        if(remote.categories)categories=remote.categories;
+        if(remote.allTags)allTags=remote.allTags;
+        if(remote.pickHistory)pickHistory=remote.pickHistory;
+        saveLocal();
+      }
+    }
+  }catch(e){}
+  // Always push current local data up to GitHub
+  const localData={items,categories,allTags,pickHistory};
+  const content=btoa(unescape(encodeURIComponent(JSON.stringify(localData))));
+  const body={message:'Sync from Meal Picker',content,branch};
+  if(sha)body.sha=sha;
   const r=await fetch(apiBase,{method:'PUT',headers,body:JSON.stringify(body)});
   if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.message||`HTTP ${r.status}`);}
 }
