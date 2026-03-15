@@ -242,6 +242,7 @@
     <div class="nav-actions">
       <button class="nav-btn" onclick="openStorageSheet()"><div class="sync-dot none" id="sync-dot"></div><span id="sync-label">Storage</span></button>
       <button class="nav-btn" id="do-sync-btn" onclick="doSync()" style="display:none"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>Sync</button>
+      <button class="nav-btn" onclick="openSettingsSheet()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>Settings</button>
     </div>
   </div>
   <div class="tab-bar">
@@ -251,7 +252,6 @@
     <button class="tab" onclick="switchTab('shopping')" id="tab-shopping"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>Shop</button>
     <button class="tab" onclick="switchTab('wheel')" id="tab-wheel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M19.07 4.93L4.93 19.07"/></svg>Wheel</button>
     <button class="tab" onclick="switchTab('history')" id="tab-history"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>History</button>
-    <button class="tab" onclick="switchTab('organize')" id="tab-organize"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>Organize</button>
   </div>
   <div class="scroll" id="scroll">
     <div id="sync-status" style="display:none"></div>
@@ -267,6 +267,13 @@
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--label)" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         <input id="search-input" type="text" placeholder="Search meals…" oninput="renderMeals()"/>
         <button class="nav-btn" id="bulk-toggle-btn" onclick="toggleBulkMode()" style="padding:4px 8px;font-size:12px">Select</button>
+      </div>
+      <!-- Organize controls -->
+      <div>
+        <div class="section-label">Sort & Filter</div>
+        <div class="card">
+          <div class="form-row"><label style="font-size:15px;color:var(--text2)">Sort by</label><select id="sort-select" onchange="saveSettings();renderMeals();renderFilters()" style="flex:1;border:none;outline:none;font-size:15px;color:var(--text);background:transparent;font-family:inherit;text-align:right;-webkit-appearance:none"><option value="alpha">A–Z</option><option value="rating">Rating</option><option value="weight">Pick weight</option><option value="recent">Recently picked</option></select></div>
+        </div>
       </div>
       <div>
         <div class="section-label" id="meals-label">Meals — 0</div>
@@ -364,32 +371,14 @@
       <div class="card" id="history-list"><div class="empty">No picks yet</div></div>
     </div>
 
-    <!-- ORGANIZE TAB -->
-    <div class="tab-page" id="page-organize">
-      <div><div class="section-label">Sort meals by</div><div class="card"><div class="form-row"><label>Sort by</label><select id="sort-select" onchange="saveSettings();renderMeals();renderFilters()"><option value="alpha">A–Z</option><option value="rating">Rating</option><option value="weight">Pick weight</option><option value="recent">Recently picked</option></select></div></div></div>
-      <div>
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-          <div class="section-label" style="padding:0">Categories</div>
-          <button class="nav-btn" onclick="openAddCategorySheet()" style="font-size:12px;padding:5px 10px">+ Add</button>
-        </div>
-        <div class="card" id="categories-list"></div>
-      </div>
-      <div>
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-          <div class="section-label" style="padding:0">Tags</div>
-          <button class="nav-btn" onclick="openAddTagSheet()" style="font-size:12px;padding:5px 10px">+ Add</button>
-        </div>
-        <div class="card" id="tags-list"></div>
-      </div>
-      <div><div class="section-label">Export & Import</div><div class="card">
-        <div class="form-row" style="cursor:pointer" onclick="exportJSON()"><label>Export all meals</label><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></div>
-        <div class="form-row" style="cursor:pointer" onclick="document.getElementById('import-file').click()"><label>Import meals</label><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div>
-      </div><input type="file" id="import-file" accept=".json" style="display:none" onchange="importJSON(event)"/></div>
     </div>
   </div>
 </div>
 
 <!-- All Sheets -->
+<!-- Settings Sheet -->
+<div class="sheet-backdrop" id="settings-sheet" onclick="closeSheet('settings-sheet',event)"><div class="sheet"><div class="sheet-handle"></div><div class="sheet-header"><button class="sheet-btn" onclick="closeSheetDirect('settings-sheet')">Done</button><div class="sheet-title">Settings</div><div style="width:50px"></div></div><div class="sheet-scroll" id="settings-sheet-body"></div></div></div>
+
 <div class="sheet-backdrop" id="storage-sheet" onclick="closeSheet('storage-sheet',event)"><div class="sheet"><div class="sheet-handle"></div><div class="sheet-header"><button class="sheet-btn" onclick="closeSheetDirect('storage-sheet')">Cancel</button><div class="sheet-title">Storage</div><button class="sheet-btn bold" onclick="saveStorageSettings()">Save</button></div><div class="sheet-scroll" id="storage-sheet-body"></div></div></div>
 <div class="sheet-backdrop" id="view-sheet" onclick="closeSheet('view-sheet',event)"><div class="sheet"><div class="sheet-handle"></div><div class="sheet-header"><button class="sheet-btn" onclick="closeSheetDirect('view-sheet')">Done</button><div class="sheet-title" id="view-sheet-title"></div><button class="sheet-btn bold" onclick="switchToEdit()">Edit</button></div><div class="sheet-scroll" id="view-sheet-body"></div></div></div>
 <div class="sheet-backdrop" id="edit-sheet" onclick="closeSheet('edit-sheet',event)"><div class="sheet"><div class="sheet-handle"></div><div class="sheet-header"><button class="sheet-btn" onclick="closeSheetDirect('edit-sheet')">Cancel</button><div class="sheet-title" id="edit-sheet-title"></div><button class="sheet-btn bold" onclick="saveRecipe()">Save</button></div><div class="sheet-scroll" id="edit-sheet-body"></div></div></div>
@@ -401,6 +390,7 @@
 <div class="sheet-backdrop" id="bulk-cat-sheet" onclick="closeSheet('bulk-cat-sheet',event)"><div class="sheet"><div class="sheet-handle"></div><div class="sheet-header"><button class="sheet-btn" onclick="closeSheetDirect('bulk-cat-sheet')">Cancel</button><div class="sheet-title">Assign Category</div><div style="width:50px"></div></div><div class="sheet-scroll" id="bulk-cat-body"></div></div></div>
 <div class="ctx-overlay" id="ctx-overlay" style="display:none" onclick="closeCtx()"></div>
 <div class="ctx-menu" id="ctx-menu" style="display:none"></div>
+<input type="file" id="import-file" accept=".json" style="display:none" onchange="importJSON(event)"/>
 <input type="file" id="photo-input" accept="image/*" onchange="handlePhotoInput(event)"/>
 <input type="file" id="camera-input" accept="image/*" capture="environment" onchange="handlePhotoInput(event)"/>
 
@@ -457,7 +447,7 @@ function saveLocal(){
 }
 function saveSettings(){settings.sort=document.getElementById('sort-select').value;localStorage.setItem('rp-settings',JSON.stringify(settings));}
 function uid(){return Math.random().toString(36).slice(2)+Date.now().toString(36);}
-function renderAll(){renderMeals();renderFilters();renderHistory();renderOrganize();renderWheelCanvas();renderPlanner();renderShoppingList();renderFridgeList();}
+function renderAll(){renderMeals();renderFilters();renderHistory();renderWheelCanvas();renderPlanner();renderShoppingList();renderFridgeList();}
 
 // ─── TABS ───
 function switchTab(name){
@@ -504,6 +494,7 @@ function renderMeals(){
   document.getElementById('bulk-bar').className='bulk-bar'+(bulkMode?' show':'');
   document.getElementById('bulk-toggle-btn').textContent=bulkMode?'Done':'Select';
   attachLongPress();
+  renderOrganize();
 }
 
 function renderMealRow(item,archived=false){
@@ -908,6 +899,7 @@ function spinWheel(){
 // ─── ORGANIZE ───
 function renderOrganize(){
   const catList=document.getElementById('categories-list'),tagList=document.getElementById('tags-list');
+  if(!catList||!tagList)return;
   catList.innerHTML=categories.length?categories.map(c=>`<div class="cat-row"><div class="cat-dot" style="background:${c.color}"></div><div style="flex:1;font-size:16px">${esc(c.name)}</div><div style="font-size:13px;color:var(--label)">${items.filter(i=>i.category===c.id).length} meals</div><button class="icon-btn" onclick="deleteCategory('${c.id}')" style="opacity:0.45"><svg width="18" height="18" viewBox="0 0 22 22" fill="none"><circle cx="11" cy="11" r="10" fill="var(--label)" opacity="0.4"/><path d="M7.5 7.5l7 7M14.5 7.5l-7 7" stroke="white" stroke-width="1.5" stroke-linecap="round"/></svg></button></div>`).join(''):'<div class="empty">No categories yet</div>';
   tagList.innerHTML=allTags.length?`<div class="tags-wrap">${allTags.map(t=>`<button class="tag-chip" style="cursor:default">${esc(t)} <span onclick="deleteTag('${esc(t)}')" style="cursor:pointer;opacity:0.6">×</span></button>`).join('')}</div>`:'<div class="empty">No tags yet</div>';
 }
@@ -1273,6 +1265,268 @@ function saveStorageSettings(){storageProvider=tempProvider;storageConfig={...te
 function closeSheet(id,e){if(e.target===e.currentTarget)closeSheetDirect(id);}
 function closeSheetDirect(id){document.getElementById(id).classList.remove('open');}
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+
+
+// ─── SETTINGS SHEET ───
+function openSettingsSheet(){
+  document.getElementById('settings-sheet-body').innerHTML=`
+    <div class="form-section">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <div class="form-label" style="padding:0">Categories</div>
+        <button class="nav-btn" onclick="openAddCategorySheet()" style="font-size:12px;padding:5px 10px">+ Add</button>
+      </div>
+      <div class="form-card" id="categories-list"></div>
+    </div>
+    <div class="form-section">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <div class="form-label" style="padding:0">Tags</div>
+        <button class="nav-btn" onclick="openAddTagSheet()" style="font-size:12px;padding:5px 10px">+ Add</button>
+      </div>
+      <div class="form-card" id="tags-list"></div>
+    </div>
+    <div class="form-section"><div class="form-label">Export</div><div class="form-card">
+      <div class="form-row" style="cursor:pointer" onclick="exportJSON()">
+        <div style="width:36px;height:36px;border-radius:10px;background:rgba(0,122,255,0.12);display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></div>
+        <div style="flex:1"><div style="font-size:16px;font-weight:500">Export as JSON</div><div style="font-size:13px;color:var(--label);margin-top:2px">Full backup — meals, recipes, plan, history</div></div>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--label)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+      </div>
+      <div class="form-row" style="cursor:pointer" onclick="exportAllAsPDF()">
+        <div style="width:36px;height:36px;border-radius:10px;background:rgba(255,59,48,0.12);display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></div>
+        <div style="flex:1"><div style="font-size:16px;font-weight:500">Export as PDF</div><div style="font-size:13px;color:var(--label);margin-top:2px">Recipe book with all meals &amp; recipes</div></div>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--label)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+      </div>
+    </div></div>
+
+    <div class="form-section"><div class="form-label">Import</div><div class="form-card">
+      <div class="form-row" style="cursor:pointer" onclick="document.getElementById('import-file').click()">
+        <div style="width:36px;height:36px;border-radius:10px;background:rgba(52,199,89,0.12);display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div>
+        <div style="flex:1"><div style="font-size:16px;font-weight:500">Import from file</div><div style="font-size:13px;color:var(--label);margin-top:2px">Load a .json backup file</div></div>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--label)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+      </div>
+      <div class="form-row" style="cursor:pointer" onclick="showImportURLInput()">
+        <div style="width:36px;height:36px;border-radius:10px;background:rgba(175,82,222,0.12);display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--purple)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></div>
+        <div style="flex:1"><div style="font-size:16px;font-weight:500">Import from URL</div><div style="font-size:13px;color:var(--label);margin-top:2px">Load a .json file from a web link</div></div>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--label)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+      </div>
+      <div id="import-url-row" style="display:none;padding:12px 16px;border-top:0.5px solid var(--sep);flex-direction:column;gap:10px">
+        <div style="display:flex;gap:8px;align-items:center">
+          <input id="import-url-input" type="url" placeholder="https://…" style="flex:1;border:none;outline:none;font-size:15px;color:var(--text);background:transparent;font-family:inherit" autocapitalize="none"/>
+          <button class="nav-btn" onclick="importFromURL()" style="flex-shrink:0;font-size:13px">Import</button>
+        </div>
+        <div style="font-size:12px;color:var(--label)">Paste a direct link to a .json export file (e.g. from GitHub or Dropbox)</div>
+      </div>
+    </div></div>
+    <div style="height:20px"></div>`;
+  document.getElementById('settings-sheet').classList.add('open');
+  renderOrganize();
+}
+
+function showImportURLInput(){
+  const row = document.getElementById('import-url-row');
+  if(row) { row.style.display = row.style.display==='none' ? 'flex' : 'none'; }
+}
+
+async function importFromURL(){
+  const url = document.getElementById('import-url-input')?.value.trim();
+  if(!url){ showSyncStatus('error','Please enter a URL'); return; }
+  showSyncStatus('info','<div class="spinner"></div> &nbsp;Fetching…');
+  try {
+    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+    const resp = await fetch(proxyUrl);
+    if(!resp.ok) throw new Error('Could not fetch file');
+    const data = await resp.json();
+    const parsed = JSON.parse(data.contents);
+    if(parsed.items) items = parsed.items;
+    if(parsed.categories) categories = parsed.categories;
+    if(parsed.allTags) allTags = parsed.allTags;
+    if(parsed.pickHistory) pickHistory = parsed.pickHistory;
+    if(parsed.planner) planner = parsed.planner;
+    if(parsed.shoppingList) shoppingList = parsed.shoppingList;
+    saveLocal(); renderAll();
+    closeSheetDirect('settings-sheet');
+    showSyncStatus('success', `✓ Imported ${parsed.items?.length||0} meals`);
+  } catch(e) {
+    showSyncStatus('error', '✕ Import failed — make sure the URL points directly to a .json file');
+  }
+}
+
+
+// ─── EXPORT ALL AS PDF RECIPE BOOK ───
+async function exportAllAsPDF(){
+  const mealsWithRecipes = items.filter(i => !i.archived && i.recipe);
+  const mealsWithout = items.filter(i => !i.archived && !i.recipe);
+  if(!items.filter(i=>!i.archived).length){ showSyncStatus('error','No meals to export'); return; }
+  showSyncStatus('info','<div class="spinner"></div> &nbsp;Generating PDF recipe book…');
+  closeSheetDirect('settings-sheet');
+
+  if(!window.jspdf){
+    await new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';s.onload=res;s.onerror=rej;document.head.appendChild(s);});
+  }
+
+  const{jsPDF}=window.jspdf;
+  const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
+  const pageW=210, margin=16, contentW=pageW-margin*2;
+  const blue=[0,122,255], black=[28,28,30], gray=[142,142,147], lightGray=[242,242,247];
+
+  function checkPage(needed=10, y){ if(y+needed>280){doc.addPage();return margin;} return y; }
+
+  // ── Cover page ──
+  let y = 60;
+  doc.setFillColor(...blue);
+  doc.rect(0, 0, pageW, 8, 'F');
+  doc.setFontSize(36); doc.setFont('helvetica','bold'); doc.setTextColor(...black);
+  doc.text('Meal Picker', pageW/2, y, {align:'center'}); y += 14;
+  doc.setFillColor(...blue); doc.rect(margin+20, y, contentW-40, 0.8, 'F'); y += 8;
+  doc.setFontSize(16); doc.setFont('helvetica','normal'); doc.setTextColor(...gray);
+  doc.text('Recipe Book', pageW/2, y, {align:'center'}); y += 10;
+  doc.setFontSize(11); doc.setTextColor(...gray);
+  doc.text(`${items.filter(i=>!i.archived).length} meals  •  ${mealsWithRecipes.length} recipes`, pageW/2, y, {align:'center'}); y += 6;
+  doc.text(new Date().toLocaleDateString(undefined,{year:'numeric',month:'long',day:'numeric'}), pageW/2, y, {align:'center'});
+
+  // ── Table of contents ──
+  doc.addPage(); y = margin;
+  doc.setFontSize(20); doc.setFont('helvetica','bold'); doc.setTextColor(...black);
+  doc.text('Contents', margin, y); y += 3;
+  doc.setFillColor(...blue); doc.rect(margin, y, contentW, 0.6, 'F'); y += 8;
+
+  // Group by category
+  const grouped = {};
+  const noCat = [];
+  items.filter(i=>!i.archived).sort((a,b)=>a.name.localeCompare(b.name,undefined,{sensitivity:'base'})).forEach(item => {
+    const cat = categories.find(c=>c.id===item.category);
+    if(cat){ if(!grouped[cat.name])grouped[cat.name]={color:cat.color,items:[]}; grouped[cat.name].items.push(item); }
+    else noCat.push(item);
+  });
+
+  const allGroups = [...Object.entries(grouped).map(([name,{color,items}])=>({name,color,items})), ...(noCat.length?[{name:'Uncategorized',color:'#8E8E93',items:noCat}]:[])];
+
+  allGroups.forEach(group => {
+    y = checkPage(14, y);
+    doc.setFontSize(11); doc.setFont('helvetica','bold');
+    const rgb = hexToRgb(group.color);
+    doc.setTextColor(...rgb);
+    doc.text(group.name.toUpperCase(), margin, y); y += 5;
+    group.items.forEach(item => {
+      y = checkPage(7, y);
+      doc.setFontSize(10); doc.setFont('helvetica','normal'); doc.setTextColor(...black);
+      doc.text('• ' + item.name, margin+4, y);
+      if(!item.recipe){ doc.setTextColor(...gray); doc.text('(no recipe)', pageW-margin-2, y, {align:'right'}); }
+      y += 5;
+    });
+    y += 3;
+  });
+
+  // ── Recipe pages ──
+  allGroups.forEach(group => {
+    // Category divider page
+    doc.addPage(); y = margin;
+    const rgb = hexToRgb(group.color);
+    doc.setFillColor(...rgb);
+    doc.rect(0, 0, pageW, 4, 'F');
+    doc.setFontSize(28); doc.setFont('helvetica','bold'); doc.setTextColor(...rgb);
+    doc.text(group.name, margin, 80);
+    doc.setFontSize(12); doc.setFont('helvetica','normal'); doc.setTextColor(...gray);
+    doc.text(`${group.items.length} meal${group.items.length!==1?'s':''}`, margin, 90);
+
+    group.items.forEach(item => {
+      doc.addPage(); y = margin;
+      const r = item.recipe || {};
+      const cat = categories.find(c=>c.id===item.category);
+      const stars = item.rating ? '★'.repeat(item.rating)+'☆'.repeat(5-item.rating) : '';
+      const ings = (r.ingredients||[]).filter(Boolean);
+      const steps = (r.steps||[]).filter(Boolean);
+
+      // Item header
+      doc.setFontSize(22); doc.setFont('helvetica','bold'); doc.setTextColor(...black);
+      const titleLines = doc.splitTextToSize(item.name, contentW);
+      doc.text(titleLines, margin, y); y += titleLines.length*8+2;
+      doc.setFillColor(...blue); doc.rect(margin, y, contentW, 0.6, 'F'); y += 5;
+
+      // Stars + difficulty + tags
+      const badges = [];
+      if(item.rating) badges.push({text:stars, color:'#FFD60A'});
+      if(item.difficulty) badges.push({text:item.difficulty, color:item.difficulty==='Easy'?'#34C759':item.difficulty==='Medium'?'#FF9500':'#FF3B30'});
+      (item.tags||[]).forEach(t=>badges.push({text:t,color:'#8E8E93'}));
+      if(badges.length){
+        let px=margin;
+        badges.forEach(b=>{
+          const c=hexToRgb(b.color);
+          doc.setFontSize(9);doc.setFont('helvetica','normal');doc.setTextColor(...c);
+          const tw=doc.getTextWidth(b.text);
+          doc.setFillColor(c[0],c[1],c[2]);
+          doc.roundedRect(px,y-3.5,tw+8,5.5,2,2,'F');
+          doc.setTextColor(255,255,255); doc.text(b.text,px+4,y);
+          px+=tw+14;
+        });
+        y+=7;
+      }
+
+      if(!item.recipe){
+        doc.setFontSize(12);doc.setFont('helvetica','normal');doc.setTextColor(...gray);
+        doc.text('No recipe attached',margin,y+10);
+        return;
+      }
+
+      // Photo
+      if(r.photoDataUrl){try{doc.addImage(r.photoDataUrl,'JPEG',margin,y,contentW,50,undefined,'FAST');y+=54;}catch(e){}}
+
+      // Stats
+      const stats=[];
+      if(r.prepTime)stats.push({l:'Prep',v:r.prepTime});
+      if(r.cookTime)stats.push({l:'Cook',v:r.cookTime});
+      if(r.servings)stats.push({l:'Serves',v:r.servings});
+      const n=item.nutritional||{};
+      if(n.calories)stats.push({l:'Cal',v:String(n.calories)});
+      if(n.protein)stats.push({l:'Protein',v:n.protein});
+      if(stats.length){
+        y=checkPage(18,y);
+        const cellW=contentW/stats.length;
+        doc.setFillColor(...lightGray);doc.roundedRect(margin,y-4,contentW,16,3,3,'F');
+        stats.forEach((s,i)=>{const cx=margin+i*cellW+cellW/2;doc.setFontSize(8);doc.setFont('helvetica','normal');doc.setTextColor(...gray);doc.text(s.l.toUpperCase(),cx,y+1,{align:'center'});doc.setFontSize(11);doc.setFont('helvetica','bold');doc.setTextColor(...black);doc.text(s.v,cx,y+7,{align:'center'});});
+        y+=18;
+      }
+
+      // Ingredients
+      if(ings.length){
+        y=checkPage(14,y);
+        doc.setFontSize(13);doc.setFont('helvetica','bold');doc.setTextColor(...black);doc.text('Ingredients',margin,y);y+=2;
+        doc.setFillColor(...blue);doc.rect(margin,y,contentW,0.4,'F');y+=5;
+        ings.forEach(ing=>{y=checkPage(8,y);doc.setFillColor(...blue);doc.circle(margin+2,y-1.2,1.2,'F');doc.setFontSize(10);doc.setFont('helvetica','normal');doc.setTextColor(...black);const lines=doc.splitTextToSize(ing,contentW-8);doc.text(lines,margin+6,y);y+=lines.length*5+2;});
+        y+=4;
+      }
+
+      // Steps
+      if(steps.length){
+        y=checkPage(14,y);
+        doc.setFontSize(13);doc.setFont('helvetica','bold');doc.setTextColor(...black);doc.text('Instructions',margin,y);y+=2;
+        doc.setFillColor(...blue);doc.rect(margin,y,contentW,0.4,'F');y+=5;
+        steps.forEach((step,i)=>{y=checkPage(12,y);doc.setFillColor(...blue);doc.circle(margin+3.5,y-1.5,3.5,'F');doc.setFontSize(8);doc.setFont('helvetica','bold');doc.setTextColor(255,255,255);doc.text(String(i+1),margin+3.5,y-0.5,{align:'center'});doc.setFontSize(10);doc.setFont('helvetica','normal');doc.setTextColor(...black);const lines=doc.splitTextToSize(step,contentW-10);doc.text(lines,margin+10,y);y+=lines.length*5+4;});
+      }
+
+      // Notes
+      if(r.notes){y=checkPage(14,y);doc.setFontSize(13);doc.setFont('helvetica','bold');doc.setTextColor(...black);doc.text('Notes',margin,y);y+=2;doc.setFillColor(...blue);doc.rect(margin,y,contentW,0.4,'F');y+=5;const noteLines=doc.splitTextToSize(r.notes,contentW-8);doc.setFillColor(...lightGray);doc.roundedRect(margin,y-3,contentW,noteLines.length*5+6,3,3,'F');doc.setFontSize(10);doc.setFont('helvetica','normal');doc.setTextColor(...black);doc.text(noteLines,margin+4,y);}
+
+      // Page footer
+      doc.setFontSize(8);doc.setTextColor(...gray);doc.text(item.name, pageW/2, 290, {align:'center'});
+    });
+  });
+
+  // Page numbers
+  const pageCount = doc.getNumberOfPages();
+  for(let i=2;i<=pageCount;i++){
+    doc.setPage(i);doc.setFontSize(8);doc.setTextColor(...gray);
+    doc.text(String(i-1), pageW-margin, 290, {align:'right'});
+  }
+
+  const blob = doc.output('blob');
+  document.getElementById('sync-status').style.display='none';
+  const filename = 'meal-picker-recipes.pdf';
+  if(navigator.canShare&&navigator.canShare({files:[new File([blob],'r.pdf',{type:'application/pdf'})]})){
+    navigator.share({files:[new File([blob],filename,{type:'application/pdf'})],title:'Meal Picker Recipe Book'}).catch(()=>downloadPDF(blob,filename));
+  } else {
+    downloadPDF(blob,filename);
+  }
+}
 
 load();
 </script>
