@@ -392,19 +392,6 @@
 <div class="ctx-menu" id="ctx-menu" style="display:none"></div>
 <input type="file" id="import-file" accept=".json" style="display:none" onchange="importJSON(event)"/>
 <!-- PDF Import Review Sheet -->
-<div class="sheet-backdrop" id="pdf-import-sheet" onclick="closeSheet('pdf-import-sheet',event)">
-  <div class="sheet">
-    <div class="sheet-handle"></div>
-    <div class="sheet-header">
-      <button class="sheet-btn" onclick="closeSheetDirect('pdf-import-sheet')">Cancel</button>
-      <div class="sheet-title">Imported Recipe</div>
-      <button class="sheet-btn bold" onclick="savePDFImport()">Add</button>
-    </div>
-    <div class="sheet-scroll" id="pdf-import-body"></div>
-  </div>
-</div>
-
-<input type="file" id="import-pdf-file" accept=".pdf" style="display:none" onchange="importFromPDF(event)"/>
 <input type="file" id="photo-input" accept="image/*" onchange="handlePhotoInput(event)"/>
 <input type="file" id="camera-input" accept="image/*" capture="environment" onchange="handlePhotoInput(event)"/>
 
@@ -1107,13 +1094,34 @@ async function importRecipeFromURL(){
   const url=document.getElementById('recipe-url-input')?.value.trim();
   if(!url){showSyncStatus('error','Please enter a URL');return;}
   showSyncStatus('info','<div class="spinner"></div> &nbsp;Fetching recipe…');
+
+  let html=null;
+
+  // Try allorigins proxy
   try{
-    // Use allorigins.win as a CORS proxy
-    const proxyUrl=`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
-    const resp=await fetch(proxyUrl);
-    if(!resp.ok)throw new Error('Could not fetch page');
-    const data=await resp.json();
-    const html=data.contents;
+    const resp=await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`);
+    if(resp.ok){const data=await resp.json();if(data.contents)html=data.contents;}
+  }catch(e){}
+
+  // Fallback: corsproxy.io
+  if(!html){
+    try{
+      const resp=await fetch(`https://corsproxy.io/?${encodeURIComponent(url)}`);
+      if(resp.ok)html=await resp.text();
+    }catch(e){}
+  }
+
+  // Fallback: direct fetch (works on some sites)
+  if(!html){
+    try{
+      const resp=await fetch(url);
+      if(resp.ok)html=await resp.text();
+    }catch(e){}
+  }
+
+  if(!html){showSyncStatus('error','✕ Could not fetch the page. The site may be blocking external access.');return;}
+
+  try{
     // Try to extract JSON-LD recipe schema
     const ldMatch=html.match(/<script[^>]*type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/gi)||[];
     let recipe=null;
@@ -1125,14 +1133,12 @@ async function importRecipeFromURL(){
       }catch(e){}
     }
     if(!recipe)throw new Error('No structured recipe data found on this page. Try a different recipe site.');
-    // Map schema to our format
     const ings=(recipe.recipeIngredient||[]).map(i=>String(i).trim()).filter(Boolean);
     const rawSteps=recipe.recipeInstructions||[];
     const steps=rawSteps.map(s=>typeof s==='string'?s.trim():(s.text||s.name||'').trim()).filter(Boolean);
     const prepTime=parseDuration(recipe.prepTime);
     const cookTime=parseDuration(recipe.cookTime);
     const servings=recipe.recipeYield?String(Array.isArray(recipe.recipeYield)?recipe.recipeYield[0]:recipe.recipeYield):'';
-    // Fill form
     if(ings.length){editIngredients=ings;refreshIngredientCard();}
     if(steps.length){editSteps=steps;refreshStepCard();}
     if(prepTime&&document.getElementById('f-prep'))document.getElementById('f-prep').value=prepTime;
@@ -1328,11 +1334,6 @@ function openSettingsSheet(){
           <button class="nav-btn" onclick="importFromURL()" style="flex-shrink:0;font-size:13px">Import</button>
         </div>
         <div style="font-size:12px;color:var(--label)">Paste a direct link to a .json export file (e.g. from GitHub or Dropbox)</div>
-      </div>
-      <div class="form-row" style="cursor:pointer" onclick="document.getElementById('import-pdf-file').click()">
-        <div style="width:36px;height:36px;border-radius:10px;background:rgba(255,149,0,0.12);display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--orange)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M9 13h6M9 17h4"/></svg></div>
-        <div style="flex:1"><div style="font-size:16px;font-weight:500">Import from PDF</div><div style="font-size:13px;color:var(--label);margin-top:2px">AI reads any recipe PDF and extracts the details</div></div>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--label)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
       </div>
     </div></div>
     <div style="height:20px"></div>`;
@@ -1589,144 +1590,6 @@ async function exportAllAsPDF(){
 
 
 // ─── IMPORT FROM PDF (AI-powered) ───
-async function importFromPDF(e){
-  const file = e.target.files[0]; if(!file) return;
-  e.target.value = '';
-  closeSheetDirect('settings-sheet');
-  showSyncStatus('info','<div class="spinner"></div> &nbsp;Reading PDF with AI…');
-
-  try {
-    // Convert PDF to base64
-    const base64 = await new Promise((res, rej) => {
-      const reader = new FileReader();
-      reader.onload = () => res(reader.result.split(',')[1]);
-      reader.onerror = rej;
-      reader.readAsDataURL(file);
-    });
-
-    // Check API key
-    // Send to Claude API
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 2000,
-        messages: [{
-          role: 'user',
-          content: [
-            {
-              type: 'document',
-              source: { type: 'base64', media_type: 'application/pdf', data: base64 }
-            },
-            {
-              type: 'text',
-              text: `Extract the recipe from this PDF and return ONLY a JSON object with NO markdown, NO backticks, NO preamble. Use exactly this structure:
-{
-  "name": "Recipe name",
-  "prepTime": "e.g. 15 mins",
-  "cookTime": "e.g. 30 mins",
-  "servings": "e.g. 4",
-  "ingredients": ["ingredient 1", "ingredient 2"],
-  "steps": ["Step 1 description", "Step 2 description"],
-  "notes": "Any additional notes or tips"
-}
-If a field is not present in the PDF, use an empty string or empty array. Return only the JSON, nothing else.`
-            }
-          ]
-        }]
-      })
-    });
-
-    if(!response.ok){
-      const errData = await response.json().catch(()=>({}));
-      if(response.status===401) throw new Error('Invalid API key — check your key in Settings');
-      if(response.status===429) throw new Error('API rate limit reached — try again in a moment');
-      throw new Error(errData.error?.message || `API error ${response.status}`);
-    }
-    const data = await response.json();
-    const text = data.content.map(c => c.text || '').join('').trim();
-    const clean = text.replace(/```json|```/g, '').trim();
-    const recipe = JSON.parse(clean);
-
-    document.getElementById('sync-status').style.display = 'none';
-
-    // Show review sheet
-    window._pdfImportData = recipe;
-    renderPDFImportReview(recipe);
-    document.getElementById('pdf-import-sheet').classList.add('open');
-
-  } catch(err) {
-    showSyncStatus('error', '✕ Could not read PDF: ' + err.message);
-  }
-}
-
-function renderPDFImportReview(recipe){
-  const body = document.getElementById('pdf-import-body');
-  body.innerHTML = `
-    <div class="form-section"><div class="form-label">Meal Name</div>
-      <div class="form-card"><div class="form-row"><input id="pdf-name" type="text" value="${esc(recipe.name||'')}" style="text-align:left;flex:1" placeholder="Meal name"/></div></div>
-    </div>
-    <div class="form-section"><div class="form-label">Timings & Servings</div>
-      <div class="form-card">
-        <div class="form-row"><label>Prep time</label><input id="pdf-prep" type="text" value="${esc(recipe.prepTime||'')}" placeholder="e.g. 15 mins"/></div>
-        <div class="form-row"><label>Cook time</label><input id="pdf-cook" type="text" value="${esc(recipe.cookTime||'')}" placeholder="e.g. 30 mins"/></div>
-        <div class="form-row"><label>Servings</label><input id="pdf-servings" type="text" value="${esc(recipe.servings||'')}" placeholder="e.g. 4"/></div>
-      </div>
-    </div>
-    <div class="form-section"><div class="form-label">Ingredients (${(recipe.ingredients||[]).length})</div>
-      <div class="form-card" style="padding:12px 16px">
-        ${(recipe.ingredients||[]).map((ing,i) => `
-          <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:0.5px solid var(--sep)">
-            <div class="ing-dot" style="flex-shrink:0;margin-top:0"></div>
-            <div style="font-size:15px;flex:1">${esc(ing)}</div>
-          </div>`).join('')}
-        ${!(recipe.ingredients||[]).length ? '<div style="color:var(--label);font-size:14px">No ingredients found</div>' : ''}
-      </div>
-    </div>
-    <div class="form-section"><div class="form-label">Steps (${(recipe.steps||[]).length})</div>
-      <div class="form-card" style="padding:12px 16px">
-        ${(recipe.steps||[]).map((step,i) => `
-          <div style="display:flex;align-items:flex-start;gap:10px;padding:6px 0;border-bottom:0.5px solid var(--sep)">
-            <div class="step-bubble" style="flex-shrink:0;margin-top:2px">${i+1}</div>
-            <div style="font-size:15px;line-height:1.5">${esc(step)}</div>
-          </div>`).join('')}
-        ${!(recipe.steps||[]).length ? '<div style="color:var(--label);font-size:14px">No steps found</div>' : ''}
-      </div>
-    </div>
-    ${recipe.notes ? `<div class="form-section"><div class="form-label">Notes</div>
-      <div class="form-card" style="padding:14px;font-size:15px;line-height:1.6;color:var(--text)">${esc(recipe.notes)}</div>
-    </div>` : ''}
-    <div style="font-size:12px;color:var(--label);padding:4px;line-height:1.6">Review the extracted details above. Tap Add to save this as a new meal, or Cancel to discard.</div>
-    <div style="height:20px"></div>
-  `;
-}
-
-function savePDFImport(){
-  const recipe = window._pdfImportData;
-  if(!recipe) return;
-  const name = document.getElementById('pdf-name')?.value.trim() || recipe.name || 'Imported Recipe';
-  const newItem = {
-    id: uid(), name,
-    recipe: {
-      ingredients: recipe.ingredients || [],
-      steps: recipe.steps || [],
-      prepTime: document.getElementById('pdf-prep')?.value.trim() || recipe.prepTime || '',
-      cookTime: document.getElementById('pdf-cook')?.value.trim() || recipe.cookTime || '',
-      servings: document.getElementById('pdf-servings')?.value.trim() || recipe.servings || '',
-      notes: recipe.notes || '',
-      photoDataUrl: null
-    },
-    category: null, tags: [], rating: 0, weight: 1,
-    difficulty: '', nutritional: {}, archived: false, lastPicked: 0
-  };
-  items.push(newItem);
-  saveLocal(); renderAll();
-  closeSheetDirect('pdf-import-sheet');
-  switchTab('meals');
-  showSyncStatus('success', `✓ "${name}" added to your meals`);
-  window._pdfImportData = null;
-}
 
 
 
