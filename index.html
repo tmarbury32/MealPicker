@@ -1223,7 +1223,13 @@ async function syncGitHub(payload){
   const apiBase=`https://api.github.com/repos/${owner}/${repo}/contents/${FILENAME}`;
   const headers={Authorization:`Bearer ${token}`,'Content-Type':'application/json',Accept:'application/vnd.github+json'};
   let sha=null;
-  let remoteIsEmpty=true;
+
+  // Snapshot local items before any merge
+  const localItems=[...items];
+  const localCats=[...categories];
+  const localTags=[...allTags];
+  const localHistory=[...pickHistory];
+
   // Try to read existing remote file
   try{
     const r=await fetch(`${apiBase}?ref=${branch}`,{headers});
@@ -1231,20 +1237,41 @@ async function syncGitHub(payload){
       const ex=await r.json();
       sha=ex.sha;
       const remote=JSON.parse(atob(ex.content.replace(/\n/g,'')));
-      // Only overwrite local if remote has actual data
-      if(remote.items&&remote.items.length>0){
-        remoteIsEmpty=false;
-        items=remote.items;
-        if(remote.categories)categories=remote.categories;
-        if(remote.allTags)allTags=remote.allTags;
-        if(remote.pickHistory)pickHistory=remote.pickHistory;
-        saveLocal();
+      if(remote.items){
+        // Merge: combine local and remote, deduplicate by id
+        const merged=remote.items.slice();
+        for(const localItem of localItems){
+          if(!merged.find(r=>r.id===localItem.id)){
+            merged.push(localItem);
+          }
+        }
+        items=merged.sort((a,b)=>a.name.localeCompare(b.name,undefined,{sensitivity:'base'}));
       }
+      // Merge categories — keep all unique by id
+      if(remote.categories){
+        const mergedCats=[...remote.categories];
+        for(const c of localCats){if(!mergedCats.find(x=>x.id===c.id))mergedCats.push(c);}
+        categories=mergedCats;
+      }
+      // Merge tags — keep all unique
+      if(remote.allTags){
+        const mergedTags=[...remote.allTags];
+        for(const t of localTags){if(!mergedTags.includes(t))mergedTags.push(t);}
+        allTags=mergedTags;
+      }
+      // Merge history — combine and sort by date, keep latest 50
+      if(remote.pickHistory){
+        const mergedHistory=[...remote.pickHistory];
+        for(const h of localHistory){if(!mergedHistory.find(x=>x.id===h.id))mergedHistory.push(h);}
+        pickHistory=mergedHistory.sort((a,b)=>b.date-a.date).slice(0,50);
+      }
+      saveLocal();
     }
   }catch(e){}
-  // Always push current local data up to GitHub
-  const localData={items,categories,allTags,pickHistory};
-  const content=btoa(unescape(encodeURIComponent(JSON.stringify(localData))));
+
+  // Push merged data up to GitHub
+  const merged={items,categories,allTags,pickHistory};
+  const content=btoa(unescape(encodeURIComponent(JSON.stringify(merged))));
   const body={message:'Sync from Meal Picker',content,branch};
   if(sha)body.sha=sha;
   const r=await fetch(apiBase,{method:'PUT',headers,body:JSON.stringify(body)});
