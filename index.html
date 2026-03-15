@@ -1113,13 +1113,13 @@ async function generateRecipePDF(item) {
   }
 
   // Title
-  doc.setFillColor(...blue);
-  doc.rect(margin, y, contentW, 0.8, 'F');
-  y += 4;
   doc.setFontSize(24); doc.setFont('helvetica','bold'); doc.setTextColor(...black);
   const titleLines = doc.splitTextToSize(item.name, contentW);
   doc.text(titleLines, margin, y);
   y += titleLines.length * 9 + 3;
+  doc.setFillColor(...blue);
+  doc.rect(margin, y, contentW, 0.8, 'F');
+  y += 4;
 
   // Stars
   if (item.rating) {
