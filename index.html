@@ -420,6 +420,7 @@ let plannerDayTarget=null; // {dayKey} for planner pick sheet
 let activeTimers={}; // {stepKey: {interval, remaining, running}}
 let fridgeEditMode=false;
 let storageProvider=localStorage.getItem('rp-provider')||'local';
+if(!['local','github','googledrive','webdav'].includes(storageProvider)){storageProvider='local';localStorage.setItem('rp-provider','local');}
 let storageConfig={};
 try{storageConfig=JSON.parse(localStorage.getItem('rp-storage-config')||'{}');}catch(e){}
 
@@ -434,7 +435,7 @@ function load(){
   try{shoppingList=JSON.parse(localStorage.getItem('rp-shopping')||'[]');}catch(e){shoppingList=[];}
   try{fridgeItems=JSON.parse(localStorage.getItem('rp-fridge')||'[]');}catch(e){fridgeItems=[];}
   document.getElementById('sort-select').value=settings.sort||'alpha';
-  updateSyncUI(); checkImportFromURL(); checkDropboxCallback(); renderAll();
+  updateSyncUI(); checkImportFromURL(); renderAll();
 }
 
 function saveLocal(){
@@ -1231,7 +1232,7 @@ function hexToRgb(hex){return[parseInt(hex.slice(1,3),16),parseInt(hex.slice(3,5
 function updateSyncUI(){
   const dot=document.getElementById('sync-dot'),lbl=document.getElementById('sync-label'),btn=document.getElementById('do-sync-btn');
   if(storageProvider==='local'){dot.className='sync-dot none';lbl.textContent='Storage';btn.style.display='none';}
-  else{const n={github:'GitHub',googledrive:'Drive',dropbox:'Dropbox',webdav:'iCloud'};dot.className='sync-dot';lbl.textContent=n[storageProvider]||'Cloud';btn.style.display='flex';}
+  else{const n={github:'GitHub',googledrive:'Drive',webdav:'iCloud'};dot.className='sync-dot';lbl.textContent=n[storageProvider]||'Cloud';btn.style.display='flex';}
 }
 function showSyncStatus(type,msg){const el=document.getElementById('sync-status');el.style.display='block';el.innerHTML=`<div class="status-banner ${type}">${msg}</div>`;if(type!=='info')setTimeout(()=>{el.style.display='none';},4000);}
 async function doSync(){
@@ -1239,83 +1240,15 @@ async function doSync(){
   showSyncStatus('info','<div class="spinner"></div> &nbsp;Syncing…');
   try{
     if(storageProvider==='github') await syncGitHub();
-    else if(storageProvider==='dropbox') await syncDropbox();
     else throw new Error('Storage provider not fully supported yet');
     showSyncStatus('success','✓ Synced');renderAll();
   }catch(e){showSyncStatus('error','✕ Sync failed: '+e.message);}
 }
 
-async function getDropboxAccessToken(){
-  const{workerUrl,refreshToken}=storageConfig;
-  if(!workerUrl||!refreshToken)throw new Error('Dropbox not connected — tap Sign in with Dropbox in Settings');
-  const resp=await fetch(`${workerUrl.replace(/\/$/,'')}/refresh`,{
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({refreshToken})
-  });
-  if(!resp.ok)throw new Error('Could not refresh Dropbox token — try signing in again');
-  const data=await resp.json();
-  if(data.error)throw new Error(data.error);
-  return data.accessToken;
-}
 
-async function syncDropbox(){
-  const accessToken=await getDropboxAccessToken();
-  const path='/Apps/MealPicker/meal-picker-data.json';
-  const headers={Authorization:`Bearer ${accessToken}`};
-  // Download existing
-  try{
-    const r=await fetch('https://content.dropboxapi.com/2/files/download',{method:'POST',headers:{...headers,'Dropbox-API-Arg':JSON.stringify({path})}});
-    if(r.ok){
-      const d=await r.json();
-      if(d.items&&d.items.length>0){
-        const merged=[...d.items];
-        for(const li of items){if(!merged.find(r=>r.id===li.id))merged.push(li);}
-        items=merged.sort((a,b)=>a.name.localeCompare(b.name,undefined,{sensitivity:'base'}));
-        if(d.categories){const mc=[...d.categories];for(const c of categories){if(!mc.find(x=>x.id===c.id))mc.push(c);}categories=mc;}
-        if(d.allTags){const mt=[...d.allTags];for(const t of allTags){if(!mt.includes(t))mt.push(t);}allTags=mt;}
-        saveLocal();
-      }
-    }
-  }catch(e){}
-  // Upload
-  const ur=await fetch('https://content.dropboxapi.com/2/files/upload',{method:'POST',headers:{...headers,'Content-Type':'application/octet-stream','Dropbox-API-Arg':JSON.stringify({path,mode:'overwrite',autorename:false})},body:JSON.stringify({items,categories,allTags,pickHistory,planner,shoppingList})});
-  if(!ur.ok)throw new Error('Dropbox upload failed');
-}
 
-function signInDropbox(){
-  const workerUrl=tempConfig.workerUrl?.trim();
-  if(!workerUrl){alert('Please enter your Cloudflare Worker URL first');return;}
-  // Save worker URL before redirecting
-  storageConfig={...tempConfig};
-  localStorage.setItem('rp-storage-config',JSON.stringify(storageConfig));
-  window.location.href=`${workerUrl.replace(/\/$/,'')}/auth`;
-}
 
-function disconnectDropbox(){
-  if(!confirm('Disconnect Dropbox?'))return;
-  storageConfig={...storageConfig,refreshToken:null,accessToken:null};
-  tempConfig={...storageConfig};
-  localStorage.setItem('rp-storage-config',JSON.stringify(storageConfig));
-  renderStorageSheet();
-}
 
-function checkDropboxCallback(){
-  const hash=window.location.hash;
-  if(!hash.includes('dropbox-auth='))return;
-  try{
-    const encoded=hash.split('dropbox-auth=')[1];
-    const tokens=JSON.parse(decodeURIComponent(encoded));
-    storageConfig={...storageConfig,...tokens};
-    localStorage.setItem('rp-storage-config',JSON.stringify(storageConfig));
-    localStorage.setItem('rp-provider','dropbox');
-    storageProvider='dropbox';
-    window.location.hash='';
-    updateSyncUI();
-    showSyncStatus('success','✓ Dropbox connected! Tap Sync to sync your meals.');
-    openStorageSheet();
-  }catch(e){showSyncStatus('error','✕ Dropbox connection failed');}
-}
 async function syncGitHub(){
   const{token,owner,repo,branch='main'}=storageConfig;
   if(!token||!owner||!repo)throw new Error('GitHub not configured');
@@ -1347,30 +1280,13 @@ async function syncGitHub(){
 }
 function openStorageSheet(){tempProvider=storageProvider;tempConfig={...storageConfig};renderStorageSheet();document.getElementById('storage-sheet').classList.add('open');}
 function renderStorageSheet(){
-  const providers=[{id:'local',icon:'📱',name:'Local Only',desc:'Saved on this device only'},{id:'github',icon:'🐙',name:'GitHub',desc:'Store in a GitHub repository'},{id:'googledrive',icon:'🟢',name:'Google Drive',desc:'Store in your Google Drive'},{id:'dropbox',icon:'🔵',name:'Dropbox',desc:'Store in your Dropbox'},{id:'webdav',icon:'☁️',name:'iCloud (WebDAV)',desc:'Store via iCloud WebDAV'}];
+  const providers=[{id:'local',icon:'📱',name:'Local Only',desc:'Saved on this device only'},{id:'github',icon:'🐙',name:'GitHub',desc:'Store in a GitHub repository'},{id:'googledrive',icon:'🟢',name:'Google Drive',desc:'Store in your Google Drive'},{id:'webdav',icon:'☁️',name:'iCloud (WebDAV)',desc:'Store via iCloud WebDAV'}];
   document.getElementById('storage-sheet-body').innerHTML=`<div class="form-section"><div class="form-label">Choose Storage</div><div style="display:flex;flex-direction:column;gap:10px">${providers.map(p=>`<div class="provider-card ${tempProvider===p.id?'selected':''}" onclick="selectProvider('${p.id}')"><div class="provider-icon">${p.icon}</div><div class="provider-info"><div class="provider-name">${p.name}</div><div class="provider-desc">${p.desc}</div></div><div class="provider-check ${tempProvider===p.id?'checked':''}">${tempProvider===p.id?'<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>':''}</div></div>`).join('')}</div></div>${renderProviderConfig()}<div style="height:20px"></div>`;
 }
 function renderProviderConfig(){
   switch(tempProvider){
     case 'github':return`<div class="form-section"><div class="form-label">GitHub Settings</div><div class="form-card"><div class="form-row"><label>Token</label><input type="password" placeholder="ghp_xxxx" value="${esc(tempConfig.token||'')}" oninput="tempConfig.token=this.value"/></div><div class="form-row"><label>Owner</label><input type="text" placeholder="username" value="${esc(tempConfig.owner||'')}" oninput="tempConfig.owner=this.value" autocapitalize="none"/></div><div class="form-row"><label>Repository</label><input type="text" placeholder="meal-picker-data" value="${esc(tempConfig.repo||'')}" oninput="tempConfig.repo=this.value" autocapitalize="none"/></div><div class="form-row"><label>Branch</label><input type="text" placeholder="main" value="${esc(tempConfig.branch||'main')}" oninput="tempConfig.branch=this.value" autocapitalize="none"/></div></div><div style="font-size:12px;color:var(--label);padding:4px;line-height:1.5">Create a Personal Access Token at github.com → Settings → Developer settings. Grant repo scope.</div></div>`;
     case 'googledrive':return`<div class="form-section"><div class="form-label">Google Drive</div><div class="form-card"><div class="form-row"><label>Access Token</label><input type="password" placeholder="ya29.xxxx" value="${esc(tempConfig.accessToken||'')}" oninput="tempConfig.accessToken=this.value"/></div></div></div>`;
-    case 'dropbox':return`<div class="form-section"><div class="form-label">Dropbox Settings</div>
-      <div class="form-card"><div class="form-row"><label>Worker URL</label><input type="text" placeholder="https://meal-picker-auth.yourname.workers.dev" value="${esc(tempConfig.workerUrl||'')}" oninput="tempConfig.workerUrl=this.value" autocapitalize="none"/></div></div>
-      ${tempConfig.refreshToken
-        ? `<div class="form-card" style="margin-top:10px">
-            <div class="form-row">
-              <div style="width:10px;height:10px;border-radius:50%;background:var(--green);flex-shrink:0"></div>
-              <div style="flex:1;font-size:15px">Connected to Dropbox</div>
-              <button class="nav-btn" style="color:var(--red);font-size:12px" onclick="disconnectDropbox()">Disconnect</button>
-            </div>
-           </div>`
-        : `<button onclick="signInDropbox()" style="margin-top:10px;width:100%;padding:14px;background:#0061FF;border:none;border-radius:14px;font-size:16px;font-weight:600;color:white;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:10px">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="white"><path d="M12 14.56L6.5 11.28 2 14.04 7.5 17.32 12 14.56zm0 0L17.5 11.28 22 14.04 16.5 17.32 12 14.56zM2 7.96L7.5 4.68 12 7.96 6.5 11.24 2 7.96zm10 0L17.5 4.68 22 7.96 16.5 11.24 12 7.96z"/></svg>
-            Sign in with Dropbox
-           </button>`
-      }
-      <div style="font-size:12px;color:var(--label);padding:4px;line-height:1.5;margin-top:8px">Enter your Cloudflare Worker URL then tap Sign in with Dropbox. You will be redirected to Dropbox to approve access.</div>
-    </div>`;
     case 'webdav':return`<div class="form-section"><div class="form-label">iCloud WebDAV</div><div class="form-card"><div class="form-row"><label>URL</label><input type="text" value="${esc(tempConfig.url||'https://dav.drive.apple.com/')}" oninput="tempConfig.url=this.value" autocapitalize="none"/></div><div class="form-row"><label>Username</label><input type="text" placeholder="Apple ID email" value="${esc(tempConfig.username||'')}" oninput="tempConfig.username=this.value" autocapitalize="none"/></div><div class="form-row"><label>Password</label><input type="password" value="${esc(tempConfig.password||'')}" oninput="tempConfig.password=this.value"/></div></div></div>`;
     default:return'';
   }
