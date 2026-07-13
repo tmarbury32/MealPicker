@@ -421,6 +421,10 @@ let plannerDayTarget=null; // {dayKey} for planner pick sheet
 let activeTimers={}; // {stepKey: {interval, remaining, running}}
 let fridgeEditMode=false;
 let storageProvider=localStorage.getItem('rp-provider')||'local';
+let cloudflareWorkerUrl=localStorage.getItem('rp-worker-url')||'';
+let cloudflarePin=localStorage.getItem('rp-worker-pin')||'';
+let isCloudflare=storageProvider==='cloudflare';
+let pollInterval=null;
 if(!['local','github','googledrive','webdav'].includes(storageProvider)){storageProvider='local';localStorage.setItem('rp-provider','local');}
 let storageConfig={};
 try{storageConfig=JSON.parse(localStorage.getItem('rp-storage-config')||'{}');}catch(e){}
@@ -437,7 +441,15 @@ function load(){
   try{fridgeItems=JSON.parse(localStorage.getItem('rp-fridge')||'[]');}catch(e){fridgeItems=[];}
   try{deletedIds=JSON.parse(localStorage.getItem('rp-deleted')||'[]');}catch(e){deletedIds=[];}
   document.getElementById('sort-select').value=settings.sort||'alpha';
-  updateSyncUI(); checkImportFromURL(); renderAll(); checkFirstRun();
+  isCloudflare=storageProvider==='cloudflare';
+  if(isCloudflare){
+    cloudflareWorkerUrl=localStorage.getItem('rp-worker-url')||'';
+    cloudflarePin=localStorage.getItem('rp-worker-pin')||'';
+    cfFetchAll().then(()=>{renderAll();startPolling();}).catch(()=>renderAll());
+  } else {
+    renderAll();
+  }
+  updateSyncUI(); checkImportFromURL(); checkFirstRun();
 }
 
 function saveLocal(){
@@ -604,8 +616,9 @@ function toggleArchive(id){const item=items.find(i=>i.id===id);if(item){item.arc
 // ─── ADD/REMOVE ───
 function addItem(){
   const inp=document.getElementById('item-input');const val=inp.value.trim();if(!val)return;
-  items.push({id:uid(),name:val,recipe:null,category:null,tags:[],rating:0,weight:1,difficulty:'',nutritional:{},archived:false,lastPicked:0});
-  inp.value='';saveLocal();renderAll();
+  const newItem={id:uid(),name:val,recipe:null,category:null,tags:[],rating:0,weight:1,difficulty:'',nutritional:{},archived:false,lastPicked:0};
+  items.push(newItem);inp.value='';saveLocal();renderAll();
+  cfSaveItem(newItem);
 }
 document.getElementById('item-input').addEventListener('keydown',e=>{if(e.key==='Enter')addItem();});
 document.getElementById('shop-input').addEventListener('keydown',e=>{if(e.key==='Enter')addShopItem();});
@@ -614,6 +627,7 @@ function removeItem(id){
   undoStack={items:JSON.parse(JSON.stringify(items)),label:'1 meal'};
   if(!deletedIds.includes(id))deletedIds.push(id);
   items=items.filter(i=>i.id!==id);
+  cfDeleteItem(id);
   if(pickedId===id){pickedId=null;document.getElementById('result-card').classList.remove('show');}
   saveLocal();renderAll();showUndoToast('1 meal');
 }
@@ -652,6 +666,7 @@ function saveItemDetails(){
   item.name=tempItemName.trim()||item.name;item.category=tempItemCat;item.tags=[...tempItemTags];
   item.rating=tempItemRating;item.weight=tempItemWeight;item.difficulty=tempItemDiff;item.nutritional={...tempItemNutri};
   saveLocal();renderAll();closeSheetDirect('item-sheet');
+  cfSaveItem(items.find(i=>i.id===editingId));
 }
 
 // ─── FILTERS ───
@@ -751,6 +766,7 @@ function addToPlannerDay(mealId,mealName){
   if(!planner[plannerDayTarget])planner[plannerDayTarget]=[];
   planner[plannerDayTarget].push({mealId,mealName});
   saveLocal();renderPlanner();closeSheetDirect('planner-pick-sheet');
+  cfSavePlanner(plannerDayTarget,planner[plannerDayTarget]);
 }
 
 function removePlannerMeal(key,idx){
@@ -797,14 +813,15 @@ function renderShoppingList(){
       <button class="icon-btn" onclick="event.stopPropagation();removeShopItem(${i})" style="opacity:0.45"><svg width="18" height="18" viewBox="0 0 22 22" fill="none"><circle cx="11" cy="11" r="10" fill="var(--label)" opacity="0.4"/><path d="M7.5 7.5l7 7M14.5 7.5l-7 7" stroke="white" stroke-width="1.5" stroke-linecap="round"/></svg></button>
     </div>`).join('');
 }
+function syncShoppingToCloud(){cfSaveShopping();}
 function addShopItem(){
   const inp=document.getElementById('shop-input');const val=inp.value.trim();if(!val)return;
-  shoppingList.push({id:uid(),text:val,checked:false,source:''});inp.value='';saveLocal();renderShoppingList();
+  shoppingList.push({id:uid(),text:val,checked:false,source:''});inp.value='';saveLocal();renderShoppingList();cfSaveShopping();
 }
-function toggleShopItem(i){shoppingList[i].checked=!shoppingList[i].checked;saveLocal();renderShoppingList();}
-function removeShopItem(i){shoppingList.splice(i,1);saveLocal();renderShoppingList();}
-function clearCheckedItems(){shoppingList=shoppingList.filter(i=>!i.checked);saveLocal();renderShoppingList();}
-function clearShoppingList(){if(confirm('Clear shopping list?')){shoppingList=[];saveLocal();renderShoppingList();}}
+function toggleShopItem(i){shoppingList[i].checked=!shoppingList[i].checked;saveLocal();renderShoppingList();cfSaveShopping();}
+function removeShopItem(i){shoppingList.splice(i,1);saveLocal();renderShoppingList();cfSaveShopping();}
+function clearCheckedItems(){shoppingList=shoppingList.filter(i=>!i.checked);saveLocal();renderShoppingList();cfSaveShopping();}
+function clearShoppingList(){if(confirm('Clear shopping list?')){shoppingList=[];saveLocal();renderShoppingList();cfSaveShopping();}}
 
 // ─── FRIDGE / WHAT'S IN MY FRIDGE ───
 function renderFridgeList(){
@@ -916,11 +933,11 @@ function openAddCategorySheet(){
   document.getElementById('cat-sheet').classList.add('open');
 }
 function selectCatColor(c){CAT_COLORS.forEach(col=>{const el=document.getElementById(`col-${col.slice(1)}`);if(el)el.style.borderColor='transparent';});document.getElementById(`col-${c.slice(1)}`).style.borderColor='var(--blue)';window._selectedCatColor=c;}
-function saveCategory(){const name=document.getElementById('cat-name-input')?.value.trim();if(!name)return;categories.push({id:uid(),name,color:window._selectedCatColor||CAT_COLORS[0]});saveLocal();renderAll();closeSheetDirect('cat-sheet');}
-function deleteCategory(id){if(!confirm('Delete this category?'))return;categories=categories.filter(c=>c.id!==id);items.forEach(i=>{if(i.category===id)i.category=null;});saveLocal();renderAll();}
+function saveCategory(){const name=document.getElementById('cat-name-input')?.value.trim();if(!name)return;const cat={id:uid(),name,color:window._selectedCatColor||CAT_COLORS[0]};categories.push(cat);saveLocal();renderAll();closeSheetDirect('cat-sheet');cfSaveCategory(cat);}
+function deleteCategory(id){if(!confirm('Delete this category?'))return;categories=categories.filter(c=>c.id!==id);items.forEach(i=>{if(i.category===id)i.category=null;});saveLocal();renderAll();cfDeleteCategory(id);}
 function openAddTagSheet(){document.getElementById('tag-sheet-body').innerHTML=`<div class="form-section"><div class="form-label">Tag Name</div><div class="form-card"><div class="form-row"><input id="tag-name-input" type="text" placeholder="e.g. Quick, Vegetarian" style="text-align:left"/></div></div></div>`;document.getElementById('tag-sheet').classList.add('open');}
-function saveTag(){const name=document.getElementById('tag-name-input')?.value.trim();if(!name||allTags.includes(name))return;allTags.push(name);saveLocal();renderAll();closeSheetDirect('tag-sheet');}
-function deleteTag(t){allTags=allTags.filter(x=>x!==t);items.forEach(i=>{i.tags=(i.tags||[]).filter(x=>x!==t);});saveLocal();renderAll();}
+function saveTag(){const name=document.getElementById('tag-name-input')?.value.trim();if(!name||allTags.includes(name))return;allTags.push(name);saveLocal();renderAll();closeSheetDirect('tag-sheet');cfSaveTag(name);}
+function deleteTag(t){allTags=allTags.filter(x=>x!==t);items.forEach(i=>{i.tags=(i.tags||[]).filter(x=>x!==t);});saveLocal();renderAll();cfDeleteTag(t);}
 
 // ─── EXPORT/IMPORT ───
 function exportJSON(){
@@ -1183,6 +1200,7 @@ function saveRecipe(){
   const r={ingredients:editIngredients.filter(s=>s.trim()),steps:editSteps.filter(s=>s.trim()),prepTime:document.getElementById('f-prep')?.value.trim()||'',cookTime:document.getElementById('f-cook')?.value.trim()||'',servings:document.getElementById('f-servings')?.value.trim()||'',notes:document.getElementById('f-notes')?.value.trim()||'',photoDataUrl:currentPhotoDataUrl};
   item.recipe=(!r.ingredients.length&&!r.steps.length&&!r.prepTime&&!r.cookTime&&!r.servings&&!r.notes&&!r.photoDataUrl)?null:r;
   saveLocal();renderAll();closeSheetDirect('edit-sheet');
+  cfSaveItem(item);
   if(pickedId===editingId){document.getElementById('view-recipe-btn').style.display=item.recipe?'flex':'none';document.getElementById('add-recipe-btn').style.display=item.recipe?'none':'flex';}
 }
 function removeRecipe(){const item=items.find(i=>i.id===editingId);if(item){item.recipe=null;saveLocal();renderAll();}closeSheetDirect('edit-sheet');}
@@ -1237,6 +1255,7 @@ function hexToRgb(hex){return[parseInt(hex.slice(1,3),16),parseInt(hex.slice(3,5
 function updateSyncUI(){
   const dot=document.getElementById('sync-dot'),lbl=document.getElementById('sync-label'),btn=document.getElementById('do-sync-btn');
   if(storageProvider==='local'){dot.className='sync-dot none';lbl.textContent='Storage';btn.style.display='none';}
+  else if(storageProvider==='cloudflare'){dot.className='sync-dot';lbl.textContent='Live';btn.style.display='none';}
   else{const n={github:'GitHub',googledrive:'Drive',webdav:'iCloud'};dot.className='sync-dot';lbl.textContent=n[storageProvider]||'Cloud';btn.style.display='flex';}
 }
 function showSyncStatus(type,msg){const el=document.getElementById('sync-status');el.style.display='block';el.innerHTML=`<div class="status-banner ${type}">${msg}</div>`;if(type!=='info')setTimeout(()=>{el.style.display='none';},4000);}
@@ -1345,11 +1364,15 @@ async function syncGitHub(){
 }
 function openStorageSheet(){tempProvider=storageProvider;tempConfig={...storageConfig};renderStorageSheet();document.getElementById('storage-sheet').classList.add('open');}
 function renderStorageSheet(){
-  const providers=[{id:'local',icon:'📱',name:'Local Only',desc:'Saved on this device only'},{id:'github',icon:'🐙',name:'GitHub',desc:'Store in a GitHub repository'},{id:'googledrive',icon:'🟢',name:'Google Drive',desc:'Store in your Google Drive'},{id:'webdav',icon:'☁️',name:'iCloud (WebDAV)',desc:'Store via iCloud WebDAV'}];
+  const providers=[{id:'local',icon:'📱',name:'Local Only',desc:'Saved on this device only'},{id:'cloudflare',icon:'🔄',name:'Cloudflare (Real-time)',desc:'Live sync — changes appear instantly on all devices'},{id:'github',icon:'🐙',name:'GitHub',desc:'Manual sync to GitHub repository'},{id:'googledrive',icon:'🟢',name:'Google Drive',desc:'Store in your Google Drive'},{id:'webdav',icon:'☁️',name:'iCloud (WebDAV)',desc:'Store via iCloud WebDAV'}];
   document.getElementById('storage-sheet-body').innerHTML=`<div class="form-section"><div class="form-label">Choose Storage</div><div style="display:flex;flex-direction:column;gap:10px">${providers.map(p=>`<div class="provider-card ${tempProvider===p.id?'selected':''}" onclick="selectProvider('${p.id}')"><div class="provider-icon">${p.icon}</div><div class="provider-info"><div class="provider-name">${p.name}</div><div class="provider-desc">${p.desc}</div></div><div class="provider-check ${tempProvider===p.id?'checked':''}">${tempProvider===p.id?'<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>':''}</div></div>`).join('')}</div></div>${renderProviderConfig()}<div style="height:20px"></div>`;
 }
 function renderProviderConfig(){
   switch(tempProvider){
+    case 'cloudflare':return`<div class="form-section"><div class="form-label">Cloudflare Settings</div><div class="form-card">
+      <div class="form-row"><label>Worker URL</label><input type="text" placeholder="https://mealpicker-api.yourname.workers.dev" value="${esc(tempConfig.workerUrl||'')}" oninput="tempConfig.workerUrl=this.value" autocapitalize="none"/></div>
+      <div class="form-row"><label>PIN</label><input type="password" placeholder="Family PIN" value="${esc(tempConfig.pin||'')}" oninput="tempConfig.pin=this.value"/></div>
+    </div><div style="font-size:12px;color:var(--label);padding:4px;line-height:1.5">Enter your Worker URL and the PIN you set in Cloudflare. All family members use the same URL and PIN.</div></div>`;
     case 'github':return`<div class="form-section"><div class="form-label">GitHub Settings</div><div class="form-card"><div class="form-row"><label>Token</label><input type="password" placeholder="ghp_xxxx" value="${esc(tempConfig.token||'')}" oninput="tempConfig.token=this.value"/></div><div class="form-row"><label>Owner</label><input type="text" placeholder="username" value="${esc(tempConfig.owner||'')}" oninput="tempConfig.owner=this.value" autocapitalize="none"/></div><div class="form-row"><label>Repository</label><input type="text" placeholder="meal-picker-data" value="${esc(tempConfig.repo||'')}" oninput="tempConfig.repo=this.value" autocapitalize="none"/></div><div class="form-row"><label>Branch</label><input type="text" placeholder="main" value="${esc(tempConfig.branch||'main')}" oninput="tempConfig.branch=this.value" autocapitalize="none"/></div></div><div style="font-size:12px;color:var(--label);padding:4px;line-height:1.5">Create a Personal Access Token at github.com → Settings → Developer settings. Grant repo scope.</div></div>`;
     case 'googledrive':return`<div class="form-section"><div class="form-label">Google Drive</div><div class="form-card"><div class="form-row"><label>Access Token</label><input type="password" placeholder="ya29.xxxx" value="${esc(tempConfig.accessToken||'')}" oninput="tempConfig.accessToken=this.value"/></div></div></div>`;
     case 'webdav':return`<div class="form-section"><div class="form-label">iCloud WebDAV</div><div class="form-card"><div class="form-row"><label>URL</label><input type="text" value="${esc(tempConfig.url||'https://dav.drive.apple.com/')}" oninput="tempConfig.url=this.value" autocapitalize="none"/></div><div class="form-row"><label>Username</label><input type="text" placeholder="Apple ID email" value="${esc(tempConfig.username||'')}" oninput="tempConfig.username=this.value" autocapitalize="none"/></div><div class="form-row"><label>Password</label><input type="password" value="${esc(tempConfig.password||'')}" oninput="tempConfig.password=this.value"/></div></div></div>`;
@@ -1357,7 +1380,29 @@ function renderProviderConfig(){
   }
 }
 function selectProvider(id){tempProvider=id;renderStorageSheet();}
-function saveStorageSettings(){storageProvider=tempProvider;storageConfig={...tempConfig};localStorage.setItem('rp-provider',storageProvider);localStorage.setItem('rp-storage-config',JSON.stringify(storageConfig));updateSyncUI();closeSheetDirect('storage-sheet');if(storageProvider!=='local')showSyncStatus('info','Storage configured. Tap Sync to sync now.');}
+function saveStorageSettings(){
+  storageProvider=tempProvider;storageConfig={...tempConfig};
+  localStorage.setItem('rp-provider',storageProvider);
+  localStorage.setItem('rp-storage-config',JSON.stringify(storageConfig));
+  if(storageProvider==='cloudflare'){
+    cloudflareWorkerUrl=tempConfig.workerUrl?.trim()||'';
+    cloudflarePin=tempConfig.pin?.trim()||'';
+    localStorage.setItem('rp-worker-url',cloudflareWorkerUrl);
+    localStorage.setItem('rp-worker-pin',cloudflarePin);
+    isCloudflare=true;
+    startPolling();
+  } else {
+    isCloudflare=false;
+    stopPolling();
+  }
+  updateSyncUI();closeSheetDirect('storage-sheet');
+  if(storageProvider==='cloudflare'){
+    showSyncStatus('info','<div class="spinner"></div> &nbsp;Connecting to live database…');
+    cfFetchAll().then(()=>{renderAll();showSyncStatus('success','✓ Connected! Changes now sync in real time.');}).catch(e=>showSyncStatus('error','✕ '+e.message));
+  } else if(storageProvider!=='local'){
+    showSyncStatus('info','Storage configured. Tap Sync to sync now.');
+  }
+}
 
 // ─── SHEET HELPERS ───
 function closeSheet(id,e){if(e.target===e.currentTarget)closeSheetDirect(id);}
@@ -1681,40 +1726,40 @@ function checkFirstRun(){
 }
 
 function completeSetup(){
-  const token = document.getElementById('welcome-token').value.trim();
-  if(!token){ alert('Please paste your GitHub token first'); return; }
+  const workerUrl = (document.getElementById('welcome-worker-url')?.value||'').trim();
+  const pin = (document.getElementById('welcome-pin')?.value||'').trim();
+  if(!workerUrl){ alert('Please enter the Worker URL'); return; }
+  if(!pin){ alert('Please enter the family PIN'); return; }
 
-  // Pre-fill GitHub storage with family repo
-  storageProvider = 'github';
-  storageConfig = {
-    token: token,
-    owner: 'tmarbury32',
-    repo: 'MealPickerData',
-    branch: 'main'
-  };
+  // Save Cloudflare config
+  storageProvider = 'cloudflare';
+  storageConfig = { workerUrl, pin };
+  cloudflareWorkerUrl = workerUrl;
+  cloudflarePin = pin;
+  isCloudflare = true;
   localStorage.setItem('rp-provider', storageProvider);
   localStorage.setItem('rp-storage-config', JSON.stringify(storageConfig));
+  localStorage.setItem('rp-worker-url', workerUrl);
+  localStorage.setItem('rp-worker-pin', pin);
   localStorage.setItem('rp-setup-complete', 'true');
 
-  // Hide welcome screen
+  // Hide welcome screen and show connecting
   document.getElementById('welcome-overlay').style.display = 'none';
   updateSyncUI();
 
-  // Run first sync automatically
-  const btn = document.querySelector('#welcome-overlay button');
-  if(btn){ btn.textContent = 'Connecting…'; btn.disabled = true; }
   showSyncStatus('info','<div class="spinner"></div> &nbsp;Connecting to family list…');
-  syncGitHub().then(()=>{
-    showSyncStatus('success','✓ Connected! Your family meal list is ready.');
+  cfFetchAll().then(()=>{
     renderAll();
+    startPolling();
+    showSyncStatus('success','✓ Connected! Changes now sync in real time.');
   }).catch(e=>{
-    // Reset setup so they can try again
     localStorage.removeItem('rp-setup-complete');
     localStorage.removeItem('rp-provider');
     localStorage.removeItem('rp-storage-config');
     document.getElementById('welcome-overlay').style.display = 'flex';
+    isCloudflare = false;
     updateSyncUI();
-    alert('Could not connect: ' + e.message + '\n\nPlease check your token and try again.');
+    alert('Could not connect: ' + e.message + '\n\nPlease check the Worker URL and PIN.');
   });
 }
 
@@ -1722,6 +1767,107 @@ function skipSetup(){
   localStorage.setItem('rp-setup-complete', 'true');
   document.getElementById('welcome-overlay').style.display = 'none';
 }
+
+
+// ─── CLOUDFLARE REAL-TIME API ───
+
+function cfHeaders(){
+  return {'Content-Type':'application/json','X-PIN':cloudflarePin};
+}
+
+async function cfFetchAll(){
+  if(!cloudflareWorkerUrl||!cloudflarePin)throw new Error('Cloudflare not configured');
+  const resp=await fetch(`${cloudflareWorkerUrl}/data`,{headers:cfHeaders()});
+  if(resp.status===401)throw new Error('Invalid PIN — check your PIN in Settings');
+  if(!resp.ok)throw new Error(`Server error ${resp.status}`);
+  const data=await resp.json();
+  items=data.items||[];
+  categories=data.categories||[];
+  allTags=data.allTags||[];
+  deletedIds=data.deletedIds||[];
+  planner=data.planner||{};
+  shoppingList=data.shoppingList||[];
+  saveLocal();
+}
+
+async function cfSaveItem(item){
+  if(!isCloudflare)return;
+  try{
+    await fetch(`${cloudflareWorkerUrl}/items`,{method:'POST',headers:cfHeaders(),body:JSON.stringify(item)});
+  }catch(e){}
+}
+
+async function cfDeleteItem(id){
+  if(!isCloudflare)return;
+  try{
+    await fetch(`${cloudflareWorkerUrl}/items/${id}`,{method:'DELETE',headers:cfHeaders()});
+  }catch(e){}
+}
+
+async function cfSaveCategory(cat){
+  if(!isCloudflare)return;
+  try{
+    await fetch(`${cloudflareWorkerUrl}/categories`,{method:'POST',headers:cfHeaders(),body:JSON.stringify(cat)});
+  }catch(e){}
+}
+
+async function cfDeleteCategory(id){
+  if(!isCloudflare)return;
+  try{
+    await fetch(`${cloudflareWorkerUrl}/categories/${id}`,{method:'DELETE',headers:cfHeaders()});
+  }catch(e){}
+}
+
+async function cfSaveTag(name){
+  if(!isCloudflare)return;
+  try{
+    await fetch(`${cloudflareWorkerUrl}/tags`,{method:'POST',headers:cfHeaders(),body:JSON.stringify({name})});
+  }catch(e){}
+}
+
+async function cfDeleteTag(name){
+  if(!isCloudflare)return;
+  try{
+    await fetch(`${cloudflareWorkerUrl}/tags/${encodeURIComponent(name)}`,{method:'DELETE',headers:cfHeaders()});
+  }catch(e){}
+}
+
+async function cfSavePlanner(dayKey,meals){
+  if(!isCloudflare)return;
+  try{
+    await fetch(`${cloudflareWorkerUrl}/planner`,{method:'POST',headers:cfHeaders(),body:JSON.stringify({dayKey,meals})});
+  }catch(e){}
+}
+
+async function cfSaveShopping(){
+  if(!isCloudflare)return;
+  try{
+    await fetch(`${cloudflareWorkerUrl}/shopping`,{method:'POST',headers:cfHeaders(),body:JSON.stringify({items:shoppingList})});
+  }catch(e){}
+}
+
+// Poll for updates every 30 seconds when app is active
+function startPolling(){
+  stopPolling();
+  if(!isCloudflare)return;
+  pollInterval=setInterval(async()=>{
+    try{
+      await cfFetchAll();
+      renderAll();
+    }catch(e){}
+  },30000);
+}
+
+function stopPolling(){
+  if(pollInterval){clearInterval(pollInterval);pollInterval=null;}
+}
+
+// Refresh when user returns to the app
+document.addEventListener('visibilitychange',()=>{
+  if(!document.hidden&&isCloudflare){
+    cfFetchAll().then(()=>renderAll()).catch(()=>{});
+  }
+});
 
 load();
 </script>
@@ -1737,12 +1883,16 @@ load();
 
     <div style="background:var(--card);border-radius:16px;padding:20px;display:flex;flex-direction:column;gap:12px">
       <div style="font-size:17px;font-weight:600">Connect to Family List</div>
-      <div style="font-size:14px;color:var(--label);line-height:1.5">Paste the shared token below to connect to the Marbury family meal list. Ask the family admin for the token.</div>
+      <div style="font-size:14px;color:var(--label);line-height:1.5">Enter the PIN to connect to the Marbury family meal list. Ask the family admin for the PIN and Worker URL.</div>
       <div style="display:flex;flex-direction:column;gap:8px">
-        <div style="font-size:13px;color:var(--label);text-transform:uppercase;letter-spacing:0.5px">GitHub Token</div>
-        <input id="welcome-token" type="password" placeholder="ghp_xxxxxxxxxxxx" style="width:100%;padding:12px;border-radius:10px;border:1.5px solid var(--sep);font-size:15px;color:var(--text);background:var(--card2);font-family:inherit;outline:none"/>
+        <div style="font-size:13px;color:var(--label);text-transform:uppercase;letter-spacing:0.5px">Worker URL</div>
+        <input id="welcome-worker-url" type="text" placeholder="https://mealpicker-api.tmarbury32.workers.dev" style="width:100%;padding:12px;border-radius:10px;border:1.5px solid var(--sep);font-size:15px;color:var(--text);background:var(--card2);font-family:inherit;outline:none" autocapitalize="none"/>
       </div>
-      <button onclick="completeSetup()" style="width:100%;padding:16px;background:var(--blue);border:none;border-radius:12px;font-size:17px;font-weight:600;color:white;cursor:pointer;font-family:inherit;margin-top:4px">Connect & Sync</button>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <div style="font-size:13px;color:var(--label);text-transform:uppercase;letter-spacing:0.5px">Family PIN</div>
+        <input id="welcome-pin" type="password" placeholder="Enter PIN" style="width:100%;padding:12px;border-radius:10px;border:1.5px solid var(--sep);font-size:15px;color:var(--text);background:var(--card2);font-family:inherit;outline:none"/>
+      </div>
+      <button onclick="completeSetup()" style="width:100%;padding:16px;background:var(--blue);border:none;border-radius:12px;font-size:17px;font-weight:600;color:white;cursor:pointer;font-family:inherit;margin-top:4px">Connect to Family List</button>
     </div>
 
     <button onclick="skipSetup()" style="background:none;border:none;font-size:15px;color:var(--label);cursor:pointer;font-family:inherit;padding:8px">Use without syncing</button>
