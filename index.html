@@ -1307,26 +1307,23 @@ async function syncGitHub(){
     }
   }catch(e){}
 
-  // Push local data to GitHub
+  // Always fetch the very latest SHA right before pushing
+  // This prevents conflicts when another device has synced since we last read
+  try{
+    const latestCheck=await fetch(`${apiBase}?ref=${branch}`,{headers});
+    if(latestCheck.ok){
+      const latestData=await latestCheck.json();
+      sha=latestData.sha;
+    }
+  }catch(e){}
+
+  // Push merged data to GitHub
   const payload=JSON.stringify({items,categories,allTags,pickHistory,planner,shoppingList,deletedIds});
   const encoded=btoa(unescape(encodeURIComponent(payload)));
   const body={message:'Sync from Meal Picker',content:encoded,branch};
   if(sha)body.sha=sha;
 
-  let r=await fetch(apiBase,{method:'PUT',headers,body:JSON.stringify(body)});
-
-  // If SHA mismatch, fetch latest SHA and retry once
-  if(r.status===409||r.status===422){
-    try{
-      const latest=await fetch(`${apiBase}?ref=${branch}`,{headers});
-      if(latest.ok){
-        const latestData=await latest.json();
-        body.sha=latestData.sha;
-        r=await fetch(apiBase,{method:'PUT',headers,body:JSON.stringify(body)});
-      }
-    }catch(e){}
-  }
-
+  const r=await fetch(apiBase,{method:'PUT',headers,body:JSON.stringify(body)});
   if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.message||`HTTP ${r.status}`);}
 }
 function openStorageSheet(){tempProvider=storageProvider;tempConfig={...storageConfig};renderStorageSheet();document.getElementById('storage-sheet').classList.add('open');}
