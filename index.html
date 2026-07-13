@@ -1260,59 +1260,79 @@ async function syncGitHub(){
   const apiBase=`https://api.github.com/repos/${owner}/${repo}/contents/${FILENAME}`;
   const headers={Authorization:`Bearer ${token}`,'Content-Type':'application/json',Accept:'application/vnd.github+json'};
   const localItems=[...items],localCats=[...categories],localTags=[...allTags],localHistory=[...pickHistory];
+  const localLastSync=parseInt(localStorage.getItem('rp-last-sync')||'0');
 
   // Step 1: Read existing file from GitHub
-  let sha=null;
   const checkResp=await fetch(`${apiBase}?ref=${branch}`,{headers});
+  let sha=null;
+  let remoteLastSync=0;
 
   if(checkResp.ok){
-    // File exists — read it and merge
     const existing=await checkResp.json();
-    sha=existing.sha; // capture SHA for update
+    sha=existing.sha;
     try{
       const remote=JSON.parse(atob(existing.content.replace(/\n/g,'')));
+      remoteLastSync=remote.lastSync||0;
+
+      // Merge deleted IDs from both sides
       const allDeletedIds=[...new Set([...deletedIds,...(remote.deletedIds||[])])];
       deletedIds=allDeletedIds;
-      const remoteItems=remote.items||[];
-      const merged=[...remoteItems];
-      for(const li of localItems){
-        if(!merged.find(m=>m.id===li.id)&&!allDeletedIds.includes(li.id)){
-          merged.push(li);
-        } else {
-          const idx=merged.findIndex(m=>m.id===li.id);
-          if(idx>=0&&(li.lastPicked||0)>(merged[idx].lastPicked||0)){
-            merged[idx]={...merged[idx],...li};
+
+      // Determine which side has newer data
+      const remoteIsNewer=remoteLastSync>localLastSync;
+
+      if(remoteIsNewer){
+        // Remote is newer — use remote as base, add any local-only new items
+        const remoteItems=remote.items||[];
+        const merged=[...remoteItems];
+        for(const li of localItems){
+          // Only add local items that were created AFTER the last sync (truly new local items)
+          if(!merged.find(m=>m.id===li.id)&&!allDeletedIds.includes(li.id)){
+            merged.push(li);
           }
         }
+        items=merged.filter(i=>!allDeletedIds.includes(i.id)).sort((a,b)=>a.name.localeCompare(b.name,undefined,{sensitivity:'base'}));
+        if(remote.categories)categories=remote.categories;
+        if(remote.allTags)allTags=remote.allTags;
+        if(remote.pickHistory){const mh=[...remote.pickHistory];for(const h of localHistory){if(!mh.find(x=>x.id===h.id))mh.push(h);}pickHistory=mh.sort((a,b)=>b.date-a.date).slice(0,50);}
+        if(remote.planner)planner={...remote.planner,...planner};
+        if(remote.shoppingList)shoppingList=remote.shoppingList;
+      } else {
+        // Local is newer or same — use local as base, add any remote-only items
+        const remoteItems=remote.items||[];
+        const merged=[...localItems.filter(i=>!allDeletedIds.includes(i.id))];
+        for(const ri of remoteItems){
+          if(!merged.find(m=>m.id===ri.id)&&!allDeletedIds.includes(ri.id)){
+            merged.push(ri);
+          }
+        }
+        items=merged.sort((a,b)=>a.name.localeCompare(b.name,undefined,{sensitivity:'base'}));
+        if(remote.categories){const mc=[...categories];for(const c of remote.categories){if(!mc.find(x=>x.id===c.id))mc.push(c);}categories=mc;}
+        if(remote.allTags){const mt=[...allTags];for(const t of remote.allTags){if(!mt.includes(t))mt.push(t);}allTags=mt;}
+        if(remote.pickHistory){const mh=[...localHistory];for(const h of remote.pickHistory){if(!mh.find(x=>x.id===h.id))mh.push(h);}pickHistory=mh.sort((a,b)=>b.date-a.date).slice(0,50);}
       }
-      items=merged.filter(i=>!allDeletedIds.includes(i.id)).sort((a,b)=>a.name.localeCompare(b.name,undefined,{sensitivity:'base'}));
-      if(remote.categories){const mc=[...remote.categories];for(const c of localCats){if(!mc.find(x=>x.id===c.id))mc.push(c);}categories=mc;}
-      if(remote.allTags){const mt=[...remote.allTags];for(const t of localTags){if(!mt.includes(t))mt.push(t);}allTags=mt;}
-      if(remote.pickHistory){const mh=[...remote.pickHistory];for(const h of localHistory){if(!mh.find(x=>x.id===h.id))mh.push(h);}pickHistory=mh.sort((a,b)=>b.date-a.date).slice(0,50);}
-      if(remote.planner)planner={...remote.planner,...planner};
       saveLocal();
     }catch(e){
-      // Could not parse remote JSON — will overwrite with local data
+      // Remote JSON invalid — overwrite with local
     }
   } else if(checkResp.status===404){
-    // File does not exist yet — first sync, no SHA needed
+    // First sync — file doesn't exist yet, sha stays null
     sha=null;
   } else {
     throw new Error(`Could not read from GitHub: HTTP ${checkResp.status}`);
   }
 
-  // Step 2: Get the absolute latest SHA right before pushing
-  // This ensures we always have the current SHA even if another device synced between our read and write
-  const freshCheck=await fetch(`${apiBase}?ref=${branch}`,{headers});
-  if(freshCheck.ok){
-    const freshData=await freshCheck.json();
-    sha=freshData.sha;
-  } else if(freshCheck.status===404){
-    sha=null;
-  }
+  // Step 2: Record sync timestamp
+  const syncTime=Date.now();
+  localStorage.setItem('rp-last-sync',String(syncTime));
 
-  // Step 3: Push merged data to GitHub
-  const payload=JSON.stringify({items,categories,allTags,pickHistory,planner,shoppingList,deletedIds});
+  // Step 3: Always get the very latest SHA right before pushing to avoid conflicts
+  const freshResp=await fetch(`${apiBase}?ref=${branch}`,{headers});
+  if(freshResp.ok){sha=(await freshResp.json()).sha;}
+  else if(freshResp.status===404){sha=null;}
+
+  // Step 4: Push to GitHub
+  const payload=JSON.stringify({items,categories,allTags,pickHistory,planner,shoppingList,deletedIds,lastSync:syncTime});
   const encoded=btoa(unescape(encodeURIComponent(payload)));
   const pushBody={message:'Sync from MealPicker',content:encoded,branch};
   if(sha)pushBody.sha=sha;
@@ -1680,13 +1700,21 @@ function completeSetup(){
   document.getElementById('welcome-overlay').style.display = 'none';
   updateSyncUI();
 
-  // Sync immediately
+  // Run first sync automatically
+  const btn = document.querySelector('#welcome-overlay button');
+  if(btn){ btn.textContent = 'Connecting…'; btn.disabled = true; }
   showSyncStatus('info','<div class="spinner"></div> &nbsp;Connecting to family list…');
   syncGitHub().then(()=>{
-    showSyncStatus('success','✓ Connected! Welcome to the family meal list.');
+    showSyncStatus('success','✓ Connected! Your family meal list is ready.');
     renderAll();
   }).catch(e=>{
-    showSyncStatus('error','✕ Could not connect: ' + e.message + ' — check your token and try again');
+    // Reset setup so they can try again
+    localStorage.removeItem('rp-setup-complete');
+    localStorage.removeItem('rp-provider');
+    localStorage.removeItem('rp-storage-config');
+    document.getElementById('welcome-overlay').style.display = 'flex';
+    updateSyncUI();
+    alert('Could not connect: ' + e.message + '\n\nPlease check your token and try again.');
   });
 }
 
