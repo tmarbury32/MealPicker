@@ -1259,72 +1259,59 @@ async function syncGitHub(){
   if(!token||!owner||!repo)throw new Error('GitHub not configured');
   const apiBase=`https://api.github.com/repos/${owner}/${repo}/contents/${FILENAME}`;
   const headers={Authorization:`Bearer ${token}`,'Content-Type':'application/json',Accept:'application/vnd.github+json'};
-  let sha=null;
   const localItems=[...items],localCats=[...categories],localTags=[...allTags],localHistory=[...pickHistory];
 
-  // Try to read existing remote file
-  try{
-    const r=await fetch(`${apiBase}?ref=${branch}`,{headers});
-    if(r.ok){
-      const ex=await r.json();sha=ex.sha;
-      try{
-        const remote=JSON.parse(atob(ex.content.replace(/\n/g,'')));
-        // Merge deleted IDs from both sides first
-        const allDeletedIds=[...new Set([...deletedIds,...(remote.deletedIds||[])])];
-        deletedIds=allDeletedIds;
+  // Step 1: Read existing file from GitHub
+  let sha=null;
+  const checkResp=await fetch(`${apiBase}?ref=${branch}`,{headers});
 
-        // Start with remote items as the base (remote is the source of truth)
-        // Then add any local items that don't exist remotely AND haven't been deleted
-        const remoteItems=remote.items||[];
-        const merged=[...remoteItems];
-        for(const li of localItems){
-          // Only add local item if it's not in remote and not in deleted list
-          if(!merged.find(r=>r.id===li.id) && !allDeletedIds.includes(li.id)){
-            merged.push(li);
-          }
-          // If item exists in both, use the one with the more recent lastPicked or update
-          const remoteIdx=merged.findIndex(r=>r.id===li.id);
-          if(remoteIdx>=0 && li.lastPicked > (merged[remoteIdx].lastPicked||0)){
-            merged[remoteIdx]={...merged[remoteIdx],...li};
+  if(checkResp.ok){
+    // File exists — read it and merge
+    const existing=await checkResp.json();
+    sha=existing.sha; // capture SHA for update
+    try{
+      const remote=JSON.parse(atob(existing.content.replace(/\n/g,'')));
+      const allDeletedIds=[...new Set([...deletedIds,...(remote.deletedIds||[])])];
+      deletedIds=allDeletedIds;
+      const remoteItems=remote.items||[];
+      const merged=[...remoteItems];
+      for(const li of localItems){
+        if(!merged.find(m=>m.id===li.id)&&!allDeletedIds.includes(li.id)){
+          merged.push(li);
+        } else {
+          const idx=merged.findIndex(m=>m.id===li.id);
+          if(idx>=0&&(li.lastPicked||0)>(merged[idx].lastPicked||0)){
+            merged[idx]={...merged[idx],...li};
           }
         }
-        // Remove any items that appear in the deleted list
-        items=merged
-          .filter(i=>!allDeletedIds.includes(i.id))
-          .sort((a,b)=>a.name.localeCompare(b.name,undefined,{sensitivity:'base'}));
-        if(remote.categories){const mc=[...remote.categories];for(const c of localCats){if(!mc.find(x=>x.id===c.id))mc.push(c);}categories=mc;}
-        if(remote.allTags){const mt=[...remote.allTags];for(const t of localTags){if(!mt.includes(t))mt.push(t);}allTags=mt;}
-        if(remote.pickHistory){const mh=[...remote.pickHistory];for(const h of localHistory){if(!mh.find(x=>x.id===h.id))mh.push(h);}pickHistory=mh.sort((a,b)=>b.date-a.date).slice(0,50);}
-        if(remote.planner)planner={...remote.planner,...planner};
-        saveLocal();
-      }catch(parseErr){
-        // Remote file exists but is not valid JSON — overwrite it with local data
-        sha=sha; // keep sha so we can overwrite
       }
-    } else if(r.status===404){
-      // File doesn't exist yet — first sync, just upload local data
-      sha=null;
+      items=merged.filter(i=>!allDeletedIds.includes(i.id)).sort((a,b)=>a.name.localeCompare(b.name,undefined,{sensitivity:'base'}));
+      if(remote.categories){const mc=[...remote.categories];for(const c of localCats){if(!mc.find(x=>x.id===c.id))mc.push(c);}categories=mc;}
+      if(remote.allTags){const mt=[...remote.allTags];for(const t of localTags){if(!mt.includes(t))mt.push(t);}allTags=mt;}
+      if(remote.pickHistory){const mh=[...remote.pickHistory];for(const h of localHistory){if(!mh.find(x=>x.id===h.id))mh.push(h);}pickHistory=mh.sort((a,b)=>b.date-a.date).slice(0,50);}
+      if(remote.planner)planner={...remote.planner,...planner};
+      saveLocal();
+    }catch(e){
+      // Could not parse remote JSON — will overwrite with local data
     }
-  }catch(e){}
+  } else if(checkResp.status===404){
+    // File does not exist yet — first sync, no SHA needed
+    sha=null;
+  } else {
+    throw new Error(`Could not read from GitHub: HTTP ${checkResp.status}`);
+  }
 
-  // Always fetch the very latest SHA right before pushing
-  // This prevents conflicts when another device has synced since we last read
-  try{
-    const latestCheck=await fetch(`${apiBase}?ref=${branch}`,{headers});
-    if(latestCheck.ok){
-      const latestData=await latestCheck.json();
-      sha=latestData.sha;
-    }
-  }catch(e){}
-
-  // Push merged data to GitHub
+  // Step 2: Push merged data to GitHub
   const payload=JSON.stringify({items,categories,allTags,pickHistory,planner,shoppingList,deletedIds});
   const encoded=btoa(unescape(encodeURIComponent(payload)));
-  const body={message:'Sync from Meal Picker',content:encoded,branch};
-  if(sha)body.sha=sha;
+  const pushBody={message:'Sync from MealPicker',content:encoded,branch};
+  if(sha)pushBody.sha=sha; // only include sha if file already exists
 
-  const r=await fetch(apiBase,{method:'PUT',headers,body:JSON.stringify(body)});
-  if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.message||`HTTP ${r.status}`);}
+  const pushResp=await fetch(apiBase,{method:'PUT',headers,body:JSON.stringify(pushBody)});
+  if(!pushResp.ok){
+    const err=await pushResp.json().catch(()=>({}));
+    throw new Error(err.message||`GitHub error ${pushResp.status}`);
+  }
 }
 function openStorageSheet(){tempProvider=storageProvider;tempConfig={...storageConfig};renderStorageSheet();document.getElementById('storage-sheet').classList.add('open');}
 function renderStorageSheet(){
