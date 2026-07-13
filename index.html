@@ -1261,37 +1261,50 @@ async function syncGitHub(){
   const headers={Authorization:`Bearer ${token}`,'Content-Type':'application/json',Accept:'application/vnd.github+json'};
   let sha=null;
   const localItems=[...items],localCats=[...categories],localTags=[...allTags],localHistory=[...pickHistory];
+
+  // Try to read existing remote file
   try{
     const r=await fetch(`${apiBase}?ref=${branch}`,{headers});
     if(r.ok){
       const ex=await r.json();sha=ex.sha;
-      const remote=JSON.parse(atob(ex.content.replace(/\n/g,'')));
-      // Merge remote deleted IDs with local
-      const allDeletedIds=[...new Set([...deletedIds,...(remote.deletedIds||[])])];
-      deletedIds=allDeletedIds;
-      if(remote.items&&remote.items.length>0){
-        const merged=[...remote.items];
-        for(const li of localItems){if(!merged.find(r=>r.id===li.id))merged.push(li);}
-        // Filter out any deleted IDs from both sides
-        items=merged
-          .filter(i=>!allDeletedIds.includes(i.id))
-          .sort((a,b)=>a.name.localeCompare(b.name,undefined,{sensitivity:'base'}));
-      } else {
-        // Remote is empty but local has items — keep local
-        items=localItems.filter(i=>!allDeletedIds.includes(i.id));
+      try{
+        const remote=JSON.parse(atob(ex.content.replace(/\n/g,'')));
+        // Merge remote deleted IDs with local
+        const allDeletedIds=[...new Set([...deletedIds,...(remote.deletedIds||[])])];
+        deletedIds=allDeletedIds;
+        if(remote.items&&remote.items.length>0){
+          const merged=[...remote.items];
+          for(const li of localItems){if(!merged.find(r=>r.id===li.id))merged.push(li);}
+          items=merged
+            .filter(i=>!allDeletedIds.includes(i.id))
+            .sort((a,b)=>a.name.localeCompare(b.name,undefined,{sensitivity:'base'}));
+        } else {
+          items=localItems.filter(i=>!allDeletedIds.includes(i.id));
+        }
+        if(remote.categories){const mc=[...remote.categories];for(const c of localCats){if(!mc.find(x=>x.id===c.id))mc.push(c);}categories=mc;}
+        if(remote.allTags){const mt=[...remote.allTags];for(const t of localTags){if(!mt.includes(t))mt.push(t);}allTags=mt;}
+        if(remote.pickHistory){const mh=[...remote.pickHistory];for(const h of localHistory){if(!mh.find(x=>x.id===h.id))mh.push(h);}pickHistory=mh.sort((a,b)=>b.date-a.date).slice(0,50);}
+        if(remote.planner)planner={...remote.planner,...planner};
+        saveLocal();
+      }catch(parseErr){
+        // Remote file exists but is not valid JSON — overwrite it with local data
+        sha=sha; // keep sha so we can overwrite
       }
-      if(remote.categories){const mc=[...remote.categories];for(const c of localCats){if(!mc.find(x=>x.id===c.id))mc.push(c);}categories=mc;}
-      if(remote.allTags){const mt=[...remote.allTags];for(const t of localTags){if(!mt.includes(t))mt.push(t);}allTags=mt;}
-      if(remote.pickHistory){const mh=[...remote.pickHistory];for(const h of localHistory){if(!mh.find(x=>x.id===h.id))mh.push(h);}pickHistory=mh.sort((a,b)=>b.date-a.date).slice(0,50);}
-      if(remote.planner)planner={...remote.planner,...planner};
-      saveLocal();
+    } else if(r.status===404){
+      // File doesn't exist yet — first sync, just upload local data
+      sha=null;
     }
   }catch(e){}
+
+  // Push local data to GitHub
   const payload=JSON.stringify({items,categories,allTags,pickHistory,planner,shoppingList,deletedIds});
-  const content=btoa(unescape(encodeURIComponent(payload)));
-  const body={message:'Sync from Meal Picker',content,branch};if(sha)body.sha=sha;
+  const encoded=btoa(unescape(encodeURIComponent(payload)));
+  const body={message:'Sync from Meal Picker',content:encoded,branch};
+  if(sha)body.sha=sha;
+
   let r=await fetch(apiBase,{method:'PUT',headers,body:JSON.stringify(body)});
-  // If SHA mismatch (409 conflict), fetch latest SHA and retry once
+
+  // If SHA mismatch, fetch latest SHA and retry once
   if(r.status===409||r.status===422){
     try{
       const latest=await fetch(`${apiBase}?ref=${branch}`,{headers});
@@ -1302,6 +1315,7 @@ async function syncGitHub(){
       }
     }catch(e){}
   }
+
   if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.message||`HTTP ${r.status}`);}
 }
 function openStorageSheet(){tempProvider=storageProvider;tempConfig={...storageConfig};renderStorageSheet();document.getElementById('storage-sheet').classList.add('open');}
