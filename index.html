@@ -1269,18 +1269,29 @@ async function syncGitHub(){
       const ex=await r.json();sha=ex.sha;
       try{
         const remote=JSON.parse(atob(ex.content.replace(/\n/g,'')));
-        // Merge remote deleted IDs with local
+        // Merge deleted IDs from both sides first
         const allDeletedIds=[...new Set([...deletedIds,...(remote.deletedIds||[])])];
         deletedIds=allDeletedIds;
-        if(remote.items&&remote.items.length>0){
-          const merged=[...remote.items];
-          for(const li of localItems){if(!merged.find(r=>r.id===li.id))merged.push(li);}
-          items=merged
-            .filter(i=>!allDeletedIds.includes(i.id))
-            .sort((a,b)=>a.name.localeCompare(b.name,undefined,{sensitivity:'base'}));
-        } else {
-          items=localItems.filter(i=>!allDeletedIds.includes(i.id));
+
+        // Start with remote items as the base (remote is the source of truth)
+        // Then add any local items that don't exist remotely AND haven't been deleted
+        const remoteItems=remote.items||[];
+        const merged=[...remoteItems];
+        for(const li of localItems){
+          // Only add local item if it's not in remote and not in deleted list
+          if(!merged.find(r=>r.id===li.id) && !allDeletedIds.includes(li.id)){
+            merged.push(li);
+          }
+          // If item exists in both, use the one with the more recent lastPicked or update
+          const remoteIdx=merged.findIndex(r=>r.id===li.id);
+          if(remoteIdx>=0 && li.lastPicked > (merged[remoteIdx].lastPicked||0)){
+            merged[remoteIdx]={...merged[remoteIdx],...li};
+          }
         }
+        // Remove any items that appear in the deleted list
+        items=merged
+          .filter(i=>!allDeletedIds.includes(i.id))
+          .sort((a,b)=>a.name.localeCompare(b.name,undefined,{sensitivity:'base'}));
         if(remote.categories){const mc=[...remote.categories];for(const c of localCats){if(!mc.find(x=>x.id===c.id))mc.push(c);}categories=mc;}
         if(remote.allTags){const mt=[...remote.allTags];for(const t of localTags){if(!mt.includes(t))mt.push(t);}allTags=mt;}
         if(remote.pickHistory){const mh=[...remote.pickHistory];for(const h of localHistory){if(!mh.find(x=>x.id===h.id))mh.push(h);}pickHistory=mh.sort((a,b)=>b.date-a.date).slice(0,50);}
