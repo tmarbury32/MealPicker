@@ -1301,11 +1301,21 @@ async function syncGitHub(){
     throw new Error(`Could not read from GitHub: HTTP ${checkResp.status}`);
   }
 
-  // Step 2: Push merged data to GitHub
+  // Step 2: Get the absolute latest SHA right before pushing
+  // This ensures we always have the current SHA even if another device synced between our read and write
+  const freshCheck=await fetch(`${apiBase}?ref=${branch}`,{headers});
+  if(freshCheck.ok){
+    const freshData=await freshCheck.json();
+    sha=freshData.sha;
+  } else if(freshCheck.status===404){
+    sha=null;
+  }
+
+  // Step 3: Push merged data to GitHub
   const payload=JSON.stringify({items,categories,allTags,pickHistory,planner,shoppingList,deletedIds});
   const encoded=btoa(unescape(encodeURIComponent(payload)));
   const pushBody={message:'Sync from MealPicker',content:encoded,branch};
-  if(sha)pushBody.sha=sha; // only include sha if file already exists
+  if(sha)pushBody.sha=sha;
 
   const pushResp=await fetch(apiBase,{method:'PUT',headers,body:JSON.stringify(pushBody)});
   if(!pushResp.ok){
