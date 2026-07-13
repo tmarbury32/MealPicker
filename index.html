@@ -405,6 +405,7 @@ const DAYS=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturda
 // ─── STATE ───
 let emojiIdx=0, items=[], categories=[], allTags=[], pickHistory=[], settings={sort:'alpha'};
 let planner={}; // {dayKey: [{mealId, mealName}]}
+let deletedIds=[]; // track deleted meal IDs so they stay deleted after sync
 let shoppingList=[]; // [{id, text, checked, source}]
 let fridgeItems=[]; // string[]
 let fridgeHaveIds=[]; // mealIds that can be made
@@ -434,8 +435,9 @@ function load(){
   try{planner=JSON.parse(localStorage.getItem('rp-planner')||'{}');}catch(e){planner={};}
   try{shoppingList=JSON.parse(localStorage.getItem('rp-shopping')||'[]');}catch(e){shoppingList=[];}
   try{fridgeItems=JSON.parse(localStorage.getItem('rp-fridge')||'[]');}catch(e){fridgeItems=[];}
+  try{deletedIds=JSON.parse(localStorage.getItem('rp-deleted')||'[]');}catch(e){deletedIds=[];}
   document.getElementById('sort-select').value=settings.sort||'alpha';
-  updateSyncUI(); checkImportFromURL(); renderAll();
+  updateSyncUI(); checkImportFromURL(); renderAll(); checkFirstRun();
 }
 
 function saveLocal(){
@@ -446,6 +448,7 @@ function saveLocal(){
   localStorage.setItem('rp-planner',JSON.stringify(planner));
   localStorage.setItem('rp-shopping',JSON.stringify(shoppingList));
   localStorage.setItem('rp-fridge',JSON.stringify(fridgeItems));
+  localStorage.setItem('rp-deleted',JSON.stringify(deletedIds));
 }
 function saveSettings(){settings.sort=document.getElementById('sort-select').value;localStorage.setItem('rp-settings',JSON.stringify(settings));}
 function uid(){return Math.random().toString(36).slice(2)+Date.now().toString(36);}
@@ -545,6 +548,7 @@ function bulkDelete(){
   if(!selectedIds.size)return;
   if(!confirm(`Delete ${selectedIds.size} meal(s)?`))return;
   undoStack={items:JSON.parse(JSON.stringify(items)),label:`${selectedIds.size} meals`};
+  items.forEach(i=>{if(selectedIds.has(i.id)&&!deletedIds.includes(i.id))deletedIds.push(i.id);});
   items=items.filter(i=>!selectedIds.has(i.id));
   selectedIds.clear();bulkMode=false;saveLocal();renderAll();showUndoToast(undoStack.label);
 }
@@ -608,6 +612,7 @@ document.getElementById('shop-input').addEventListener('keydown',e=>{if(e.key===
 
 function removeItem(id){
   undoStack={items:JSON.parse(JSON.stringify(items)),label:'1 meal'};
+  if(!deletedIds.includes(id))deletedIds.push(id);
   items=items.filter(i=>i.id!==id);
   if(pickedId===id){pickedId=null;document.getElementById('result-card').classList.remove('show');}
   saveLocal();renderAll();showUndoToast('1 meal');
@@ -1261,10 +1266,19 @@ async function syncGitHub(){
     if(r.ok){
       const ex=await r.json();sha=ex.sha;
       const remote=JSON.parse(atob(ex.content.replace(/\n/g,'')));
+      // Merge remote deleted IDs with local
+      const allDeletedIds=[...new Set([...deletedIds,...(remote.deletedIds||[])])];
+      deletedIds=allDeletedIds;
       if(remote.items&&remote.items.length>0){
         const merged=[...remote.items];
         for(const li of localItems){if(!merged.find(r=>r.id===li.id))merged.push(li);}
-        items=merged.sort((a,b)=>a.name.localeCompare(b.name,undefined,{sensitivity:'base'}));
+        // Filter out any deleted IDs from both sides
+        items=merged
+          .filter(i=>!allDeletedIds.includes(i.id))
+          .sort((a,b)=>a.name.localeCompare(b.name,undefined,{sensitivity:'base'}));
+      } else {
+        // Remote is empty but local has items — keep local
+        items=localItems.filter(i=>!allDeletedIds.includes(i.id));
       }
       if(remote.categories){const mc=[...remote.categories];for(const c of localCats){if(!mc.find(x=>x.id===c.id))mc.push(c);}categories=mc;}
       if(remote.allTags){const mt=[...remote.allTags];for(const t of localTags){if(!mt.includes(t))mt.push(t);}allTags=mt;}
@@ -1273,9 +1287,21 @@ async function syncGitHub(){
       saveLocal();
     }
   }catch(e){}
-  const content=btoa(unescape(encodeURIComponent(JSON.stringify({items,categories,allTags,pickHistory,planner,shoppingList}))));
+  const payload=JSON.stringify({items,categories,allTags,pickHistory,planner,shoppingList,deletedIds});
+  const content=btoa(unescape(encodeURIComponent(payload)));
   const body={message:'Sync from Meal Picker',content,branch};if(sha)body.sha=sha;
-  const r=await fetch(apiBase,{method:'PUT',headers,body:JSON.stringify(body)});
+  let r=await fetch(apiBase,{method:'PUT',headers,body:JSON.stringify(body)});
+  // If SHA mismatch (409 conflict), fetch latest SHA and retry once
+  if(r.status===409||r.status===422){
+    try{
+      const latest=await fetch(`${apiBase}?ref=${branch}`,{headers});
+      if(latest.ok){
+        const latestData=await latest.json();
+        body.sha=latestData.sha;
+        r=await fetch(apiBase,{method:'PUT',headers,body:JSON.stringify(body)});
+      }
+    }catch(e){}
+  }
   if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.message||`HTTP ${r.status}`);}
 }
 function openStorageSheet(){tempProvider=storageProvider;tempConfig={...storageConfig};renderStorageSheet();document.getElementById('storage-sheet').classList.add('open');}
@@ -1606,7 +1632,75 @@ async function exportAllAsPDF(){
 
 
 
+
+// ─── WELCOME SETUP ───
+function checkFirstRun(){
+  const hasSetup = localStorage.getItem('rp-setup-complete');
+  if(!hasSetup){
+    document.getElementById('welcome-overlay').style.display = 'flex';
+  }
+}
+
+function completeSetup(){
+  const token = document.getElementById('welcome-token').value.trim();
+  if(!token){ alert('Please paste your GitHub token first'); return; }
+
+  // Pre-fill GitHub storage with family repo
+  storageProvider = 'github';
+  storageConfig = {
+    token: token,
+    owner: 'tmarbury32',
+    repo: 'MealPickerData',
+    branch: 'main'
+  };
+  localStorage.setItem('rp-provider', storageProvider);
+  localStorage.setItem('rp-storage-config', JSON.stringify(storageConfig));
+  localStorage.setItem('rp-setup-complete', 'true');
+
+  // Hide welcome screen
+  document.getElementById('welcome-overlay').style.display = 'none';
+  updateSyncUI();
+
+  // Sync immediately
+  showSyncStatus('info','<div class="spinner"></div> &nbsp;Connecting to family list…');
+  syncGitHub().then(()=>{
+    showSyncStatus('success','✓ Connected! Welcome to the family meal list.');
+    renderAll();
+  }).catch(e=>{
+    showSyncStatus('error','✕ Could not connect: ' + e.message + ' — check your token and try again');
+  });
+}
+
+function skipSetup(){
+  localStorage.setItem('rp-setup-complete', 'true');
+  document.getElementById('welcome-overlay').style.display = 'none';
+}
+
 load();
 </script>
+
+<!-- Welcome Setup Screen -->
+<div id="welcome-overlay" style="display:none;position:fixed;inset:0;background:var(--bg);z-index:500;display:flex;flex-direction:column;padding:var(--safe-top) 24px calc(var(--safe-bottom) + 24px);overflow-y:auto">
+  <div style="flex:1;display:flex;flex-direction:column;justify-content:center;gap:24px;max-width:400px;margin:0 auto;width:100%">
+    <div style="text-align:center">
+      <div style="font-size:64px;margin-bottom:12px">🍽️</div>
+      <div style="font-size:32px;font-weight:700;letter-spacing:-0.5px">Meal Picker</div>
+      <div style="font-size:16px;color:var(--label);margin-top:6px">Family Edition</div>
+    </div>
+
+    <div style="background:var(--card);border-radius:16px;padding:20px;display:flex;flex-direction:column;gap:12px">
+      <div style="font-size:17px;font-weight:600">Connect to Family List</div>
+      <div style="font-size:14px;color:var(--label);line-height:1.5">Paste the shared token below to connect to the Marbury family meal list. Ask the family admin for the token.</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <div style="font-size:13px;color:var(--label);text-transform:uppercase;letter-spacing:0.5px">GitHub Token</div>
+        <input id="welcome-token" type="password" placeholder="ghp_xxxxxxxxxxxx" style="width:100%;padding:12px;border-radius:10px;border:1.5px solid var(--sep);font-size:15px;color:var(--text);background:var(--card2);font-family:inherit;outline:none"/>
+      </div>
+      <button onclick="completeSetup()" style="width:100%;padding:16px;background:var(--blue);border:none;border-radius:12px;font-size:17px;font-weight:600;color:white;cursor:pointer;font-family:inherit;margin-top:4px">Connect & Sync</button>
+    </div>
+
+    <button onclick="skipSetup()" style="background:none;border:none;font-size:15px;color:var(--label);cursor:pointer;font-family:inherit;padding:8px">Use without syncing</button>
+  </div>
+</div>
+
 </body>
 </html>
